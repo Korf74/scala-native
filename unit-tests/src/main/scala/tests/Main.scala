@@ -6,7 +6,7 @@ import java.lang.System.exit
 object Main {
   def main(args: Array[String]): Unit = {
     // tests.Discover object is code-generated in the sbt build
-    val suites  = Seq(BufferedOutputStreamSuite) //tests.Discover.suites
+    val suites  = Seq(BufferedOutputStreamSuite, BufferedInputStreamSuite) //tests.Discover.suites
     var success = true
 
     suites.foreach { suite =>
