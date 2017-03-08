@@ -1,8 +1,8 @@
 package java.io
 
 /**
-  * Created by remi on 08/03/17.
-  */
+ * Created by remi on 08/03/17.
+ */
 object BufferedOutputStreamSuite extends tests.Suite {
 
   test("write to closed Buffer throws IOException") {
@@ -11,7 +11,7 @@ object BufferedOutputStreamSuite extends tests.Suite {
 
     out.close()
 
-    assertThrows[IOException](out.write(1))
+    assertThrows[java.io.IOException](out.write(1))
 
   }
 
@@ -28,7 +28,8 @@ object BufferedOutputStreamSuite extends tests.Suite {
     out.flush()
 
     val ans = arrayOut.toByteArray.zipWithIndex
-    assert(ans.forall{case (i, idx) => i == idx})
+
+    assert(ans(0) == 0 && ans(1) == 1 && ans(2) == 2)
   }
 
   test("write without flush does nothing") {
@@ -56,11 +57,11 @@ object BufferedOutputStreamSuite extends tests.Suite {
     out.flush()
 
     val ans = arrayOut.toByteArray.zipWithIndex
-    assert(ans.forall{case (i, idx) => i == idx})
+    assert(ans(0) == 0 && ans(1) == 1 && ans(2) == 2)
 
   }
 
-  test("write array with bad index or length throw expceptions") {
+  test("write array with bad index or length throw exceptions") {
 
     val array = List(0, 1, 2).map(_.toByte).toArray[Byte]
 
@@ -68,19 +69,19 @@ object BufferedOutputStreamSuite extends tests.Suite {
 
     val out = new BufferedOutputStream(arrayOut)
 
-    assertThrows[IndexOutOfBoundsException]{
+    assertThrows[IndexOutOfBoundsException] {
       out.write(array, 0, 4)
     }
 
-    assertThrows[IndexOutOfBoundsException]{
+    assertThrows[IndexOutOfBoundsException] {
       out.write(array, 4, 3)
     }
 
-    assertThrows[IndexOutOfBoundsException]{
+    assertThrows[IndexOutOfBoundsException] {
       out.write(array, -1, 3)
     }
 
-    assertThrows[IndexOutOfBoundsException]{
+    assertThrows[IndexOutOfBoundsException] {
       out.write(array, 4, -1)
     }
 

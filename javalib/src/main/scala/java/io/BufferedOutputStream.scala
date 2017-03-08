@@ -1,12 +1,13 @@
 package java.io
 
 /**
-  * Created by remi on 08/03/17.
-  */
-class BufferedOutputStream(out: OutputStream, size: Int) extends FilterOutputStream(out)
-  with Flushable
-  with Closeable
-  with AutoCloseable {
+ * Created by remi on 08/03/17.
+ */
+class BufferedOutputStream(out: OutputStream, size: Int)
+    extends FilterOutputStream(out)
+    with Flushable
+    with Closeable
+    with AutoCloseable {
 
   def this(in: OutputStream) = this(in, 8192)
 
@@ -19,16 +20,19 @@ class BufferedOutputStream(out: OutputStream, size: Int) extends FilterOutputStr
   private[this] var closed = false
 
   /**
-    * Closes this Output stream and releases any system resources associated with the stream.
-    */
+   * Closes this Output stream and releases any system resources associated with the stream.
+   */
   override def close(): Unit = {
+    flush()
     closed = true
   }
 
   /**
-    * Writes the specified byte to this buffered output stream.
-    */
+   * Writes the specified byte to this buffered output stream.
+   */
   override def write(b: Int): Unit = {
+    ensureOpen()
+
     if (count >= buf.length)
       growBuf(1)
 
@@ -37,9 +41,11 @@ class BufferedOutputStream(out: OutputStream, size: Int) extends FilterOutputStr
   }
 
   /**
-    * Writes len bytes from the specified byte array starting at offset off to this buffered output stream.
-    */
+   * Writes len bytes from the specified byte array starting at offset off to this buffered output stream.
+   */
   override def write(b: Array[Byte], off: Int, len: Int): Unit = {
+    ensureOpen()
+
     if (off < 0 || len < 0 || len > b.length - off)
       throw new IndexOutOfBoundsException()
 
@@ -51,9 +57,11 @@ class BufferedOutputStream(out: OutputStream, size: Int) extends FilterOutputStr
   }
 
   /**
-    * Flushes this buffered output stream. This forces any buffered output bytes to be written out to the underlying output stream.
-    */
+   * Flushes this buffered output stream. This forces any buffered output bytes to be written out to the underlying output stream.
+   */
   override def flush(): Unit = {
+    ensureOpen()
+
     out.write(buf)
     buf = new Array[Byte](size)
   }
@@ -70,4 +78,3 @@ class BufferedOutputStream(out: OutputStream, size: Int) extends FilterOutputStr
       throw new IOException("Operation on closed stream")
   }
 }
-

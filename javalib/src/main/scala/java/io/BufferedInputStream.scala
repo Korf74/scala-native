@@ -1,11 +1,12 @@
 package java.io
 
 /**
-  * Created by remi on 08/03/17.
-  */
-class BufferedInputStream(in: InputStream, size: Int) extends FilterInputStream(in)
-  with Closeable
-  with AutoCloseable {
+ * Created by remi on 08/03/17.
+ */
+class BufferedInputStream(in: InputStream, size: Int)
+    extends FilterInputStream(in)
+    with Closeable
+    with AutoCloseable {
 
   def this(in: InputStream) = this(in, 8192)
 
@@ -30,21 +31,21 @@ class BufferedInputStream(in: InputStream, size: Int) extends FilterInputStream(
   private[this] var end = 0
 
   /**
-    * Returns an estimate of the number of bytes that can be read (or skipped over)
-    * from this input stream without blocking by the next invocation of a method for this input stream.
-    */
+   * Returns an estimate of the number of bytes that can be read (or skipped over)
+   * from this input stream without blocking by the next invocation of a method for this input stream.
+   */
   override def available(): Int = end - pos
 
   /**
-    * Closes this input stream and releases any system resources associated with the stream.
-    */
+   * Closes this input stream and releases any system resources associated with the stream.
+   */
   override def close(): Unit = {
     closed = true
   }
 
   /**
-    * See the general contract of the mark method of InputStream.
-    */
+   * See the general contract of the mark method of InputStream.
+   */
   override def mark(readLimit: Int): Unit = {
     ensureOpen()
 
@@ -63,13 +64,13 @@ class BufferedInputStream(in: InputStream, size: Int) extends FilterInputStream(
   }
 
   /**
-    * Tests if this input stream supports the mark and reset methods.
-    */
+   * Tests if this input stream supports the mark and reset methods.
+   */
   override def markSupported(): Boolean = true
 
   /**
-    * See the general contract of the read method of InputStream.
-    */
+   * See the general contract of the read method of InputStream.
+   */
   override def read(): Int = {
     ensureOpen()
 
@@ -81,8 +82,8 @@ class BufferedInputStream(in: InputStream, size: Int) extends FilterInputStream(
   }
 
   /**
-    * Reads bytes from this byte-input stream into the specified byte array, starting at the given offset.
-    */
+   * Reads bytes from this byte-input stream into the specified byte array, starting at the given offset.
+   */
   override def read(b: Array[Byte], off: Int, len: Int): Int = {
     ensureOpen()
 
@@ -99,8 +100,8 @@ class BufferedInputStream(in: InputStream, size: Int) extends FilterInputStream(
   }
 
   /**
-    * See the general contract of the reset method of InputStream.
-    */
+   * See the general contract of the reset method of InputStream.
+   */
   override def reset(): Unit = {
     ensureOpen()
 
@@ -109,8 +110,8 @@ class BufferedInputStream(in: InputStream, size: Int) extends FilterInputStream(
   }
 
   /**
-    * See the general contract of the skip method of InputStream.
-    */
+   * See the general contract of the skip method of InputStream.
+   */
   override def skip(n: Long): Long = {
     if (n < 0) throw new IllegalArgumentException("n negative")
     else if (pos < end) {
@@ -122,7 +123,6 @@ class BufferedInputStream(in: InputStream, size: Int) extends FilterInputStream(
       in.skip(n)
     }
   }
-
 
   /** Prepare the buffer for reading. Returns false if EOF */
   private def prepareRead(): Boolean =
@@ -150,4 +150,3 @@ class BufferedInputStream(in: InputStream, size: Int) extends FilterInputStream(
       throw new IOException("Operation on closed stream")
   }
 }
-

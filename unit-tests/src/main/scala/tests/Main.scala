@@ -1,6 +1,6 @@
 package tests
 
-import java.io.BufferedOutputStreamSuite
+import java.io.{BufferedOutputStreamSuite, BufferedInputStreamSuite}
 import java.lang.System.exit
 
 object Main {
