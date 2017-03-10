@@ -27,7 +27,7 @@ object BufferedOutputStreamSuite extends tests.Suite {
 
     out.flush()
 
-    val ans = arrayOut.toByteArray.zipWithIndex
+    val ans = arrayOut.toByteArray
 
     assert(ans(0) == 0 && ans(1) == 1 && ans(2) == 2)
   }
@@ -56,7 +56,7 @@ object BufferedOutputStreamSuite extends tests.Suite {
 
     out.flush()
 
-    val ans = arrayOut.toByteArray.zipWithIndex
+    val ans = arrayOut.toByteArray
     assert(ans(0) == 0 && ans(1) == 1 && ans(2) == 2)
 
   }
