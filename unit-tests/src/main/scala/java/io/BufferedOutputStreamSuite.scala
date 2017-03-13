@@ -5,6 +5,12 @@ package java.io
  */
 object BufferedOutputStreamSuite extends tests.Suite {
 
+  test("creating a buffer of negative size throws IllegalArgumentException") {
+    assertThrows[IllegalArgumentException] {
+      val out = new BufferedOutputStream(new ByteArrayOutputStream(), -1)
+    }
+  }
+
   test("write to closed Buffer throws IOException") {
 
     val out = new BufferedOutputStream(new ByteArrayOutputStream())

@@ -8,13 +8,15 @@ class BufferedInputStream(in: InputStream, size: Int)
     with Closeable
     with AutoCloseable {
 
+  if(size < 0) throw new IllegalArgumentException()
+
   def this(in: InputStream) = this(in, 8192)
 
   /** The internal buffer array where the data is stored. */
-  private[this] var buf = new Array[Byte](size)
+  protected[this] var buf = new Array[Byte](size)
 
   /** The index one greater than the index of the last valid byte in the buffer. */
-  private[this] var count = 0
+  protected[this] var count = 0
 
   /** The maximum read ahead allowed after a call to the mark method before subsequent calls to the reset method fail.. */
   private[this] var markLimit = 0
@@ -23,7 +25,7 @@ class BufferedInputStream(in: InputStream, size: Int)
   private[this] var markpos = -1
 
   /** The current position in the buffer. */
-  private[this] var pos = 0
+  protected[this] var pos = 0
 
   private[this] var closed = false
 
@@ -34,7 +36,10 @@ class BufferedInputStream(in: InputStream, size: Int)
    * Returns an estimate of the number of bytes that can be read (or skipped over)
    * from this input stream without blocking by the next invocation of a method for this input stream.
    */
-  override def available(): Int = end - pos
+  override def available(): Int = {
+    if(closed) throw new IOException()
+    end - pos
+  }
 
   /**
    * Closes this input stream and releases any system resources associated with the stream.
@@ -47,20 +52,20 @@ class BufferedInputStream(in: InputStream, size: Int)
    * See the general contract of the mark method of InputStream.
    */
   override def mark(readLimit: Int): Unit = {
-    ensureOpen()
+    if(!closed) {
+      val srcBuf = buf
+      if (buf.size < readLimit)
+        buf = new Array[Byte](readLimit)
 
-    val srcBuf = buf
-    if (buf.size < readLimit)
-      buf = new Array[Byte](readLimit)
+      // Move data to beginning of buffer
+      if (pos != 0 || (buf ne srcBuf))
+        System.arraycopy(srcBuf, pos, buf, 0, end - pos)
 
-    // Move data to beginning of buffer
-    if (pos != 0 || (buf ne srcBuf))
-      System.arraycopy(srcBuf, pos, buf, 0, end - pos)
-
-    // Update internal state
-    end -= pos
-    pos = 0
-    markpos = 0
+      // Update internal state
+      end -= pos
+      pos = 0
+      markpos = 0
+    }
   }
 
   /**

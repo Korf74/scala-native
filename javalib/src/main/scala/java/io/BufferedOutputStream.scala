@@ -9,13 +9,15 @@ class BufferedOutputStream(out: OutputStream, size: Int)
     with Closeable
     with AutoCloseable {
 
+  if(size < 0) throw new IllegalArgumentException()
+
   def this(in: OutputStream) = this(in, 8192)
 
   /** The internal buffer array where the data is stored. */
-  private[this] var buf = new Array[Byte](size)
+  protected[this] var buf = new Array[Byte](size)
 
   /** The number of valid bytes in the buffer. */
-  private[this] var count = 0
+  protected[this] var count = 0
 
   private[this] var closed = false
 
@@ -23,8 +25,10 @@ class BufferedOutputStream(out: OutputStream, size: Int)
    * Closes this Output stream and releases any system resources associated with the stream.
    */
   override def close(): Unit = {
-    flush()
-    closed = true
+    if(!closed) {
+      flush()
+      closed = true
+    }
   }
 
   /**

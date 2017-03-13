@@ -5,6 +5,17 @@ package java.io
  */
 object BufferedInputStreamSuite extends tests.Suite {
 
+  test("creating a buffer of negative size throws IllegalArgumentException") {
+    assertThrows[IllegalArgumentException] {
+      val inputArray =
+        List(0, 1, 2, 3, 4, 5, 6, 7, 8, 9).map(_.toByte).toArray[Byte]
+
+      val arrayIn = new ByteArrayInputStream(inputArray, 0, 10)
+
+      val in = new BufferedInputStream(arrayIn, -1)
+    }
+  }
+
   test("simple reads") {
 
     val inputArray =
