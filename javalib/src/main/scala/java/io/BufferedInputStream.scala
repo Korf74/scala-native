@@ -8,7 +8,7 @@ class BufferedInputStream(in: InputStream, size: Int)
     with Closeable
     with AutoCloseable {
 
-  if(size < 0) throw new IllegalArgumentException()
+  if (size < 0) throw new IllegalArgumentException()
 
   def this(in: InputStream) = this(in, 8192)
 
@@ -37,7 +37,7 @@ class BufferedInputStream(in: InputStream, size: Int)
    * from this input stream without blocking by the next invocation of a method for this input stream.
    */
   override def available(): Int = {
-    if(closed) throw new IOException()
+    if (closed) throw new IOException()
     end - pos
   }
 
@@ -52,7 +52,7 @@ class BufferedInputStream(in: InputStream, size: Int)
    * See the general contract of the mark method of InputStream.
    */
   override def mark(readLimit: Int): Unit = {
-    if(!closed) {
+    if (!closed) {
       val srcBuf = buf
       if (buf.size < readLimit)
         buf = new Array[Byte](readLimit)

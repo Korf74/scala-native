@@ -9,7 +9,7 @@ class BufferedOutputStream(out: OutputStream, size: Int)
     with Closeable
     with AutoCloseable {
 
-  if(size < 0) throw new IllegalArgumentException()
+  if (size < 0) throw new IllegalArgumentException()
 
   def this(in: OutputStream) = this(in, 8192)
 
@@ -25,7 +25,7 @@ class BufferedOutputStream(out: OutputStream, size: Int)
    * Closes this Output stream and releases any system resources associated with the stream.
    */
   override def close(): Unit = {
-    if(!closed) {
+    if (!closed) {
       flush()
       closed = true
     }
