@@ -6,6 +6,34 @@ class Thread private (runnable: Runnable) extends Runnable {
   private var interruptedState   = false
   private[this] var name: String = "main" // default name of the main thread
 
+  val group: ThreadGroup = _
+
+  private var contextClassLoader: ClassLoader = _
+
+  private var daemon: Boolean = false
+
+  private var name: String = _
+
+  private var priority: Int = _
+
+  private val stackSize: Long = _
+
+  var started: Boolean = false
+
+  var isAlive: Boolean = false
+
+  private var target: Runnable = _
+
+  private var exceptionHandler: UncaughtExceptionHandler = _
+
+  private var threadId: Long = _
+
+  val lock: Object = new Object()
+
+  var localValues: ThreadLocal.Values = _
+
+  var inheritableValues: ThreadLocal.Values = _
+
   def run(): Unit = ()
 
   def interrupt(): Unit =
@@ -37,8 +65,33 @@ class Thread private (runnable: Runnable) extends Runnable {
 }
 
 object Thread {
+
+  final val MAX_PRIORITY: Int = 10
+
+  final val MIN_PRIORITY: Int = 1
+
+  final val NORM_PRIORITY: Int = 5
+
+  final val STACK_TRACE_INDENT: String = "    "
+
   private val MainRunnable = new Runnable { def run(): Unit = () }
   private val MainThread   = new Thread(MainRunnable)
+
+  private var defaultExceptionHandler: UncaughtExceptionHandler = null
+
+  private val threadOrdinalNum: Long = 0
+
+  private final val THREAD: String = "Thread-"
+
+  var systemThreadGroup = null
+
+  var mainThreadGroup = null
+
+  private var currentGCWatermarkCount: Int = 0
+
+  private final val GC_WATERMARK_MAX_COUNT: Int = 700
+
+
 
   def currentThread(): Thread = MainThread
 
@@ -72,4 +125,9 @@ object Thread {
   }
 
   def sleep(millis: scala.Long): Unit = sleep(millis, 0)
+
+  trait UncaughtExceptionHandler {
+    def uncaughtException(t: Thread, e: Throwable)
+  }
+
 }

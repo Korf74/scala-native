@@ -1,6 +1,6 @@
 package java.lang
 
-class ThreadGroup {
+class ThreadGroup extends Thread.UncaughtExceptionHandler {
 
   var maxPriority: Int = Thread.MAX_PRIORITY
 
@@ -20,8 +20,9 @@ class ThreadGroup {
 
   def this(parent: ThreadGroup, name: String) = {
     this()
-    if(parent == null) {
-      throw new NullPointerException("The parent thread group specified is null!")
+    if (parent == null) {
+      throw new NullPointerException(
+        "The parent thread group specified is null!")
     }
 
     parent.checkAccess()
@@ -32,14 +33,12 @@ class ThreadGroup {
     parent.add(this)
   }
 
-  def activeCount(): Int = {
-
-  }
+  def activeCount(): Int = ???
 
   def activeGroupCount(): Int = ???
 
   @deprecated
-  def allowThreadSuspension(b: Boolean): Boolean = ???
+  def allowThreadSuspension(b: Boolean): Boolean = false
 
   def checkAccess(): Unit = ???
 
@@ -85,6 +84,41 @@ class ThreadGroup {
   override def toString(): String = ???
 
   def uncaughtException(t: Thread, e: Throwable): Unit = ???
+
+  def add(thread: Thread): Unit = ???
+
+  def checkGroup(): Unit = ???
+
+  def remove(thread: Thread): Unit = ???
+
+  def add(group: ThreadGroup): Unit = ???
+
+  @SuppressWarnings("unused")
+  private def getActiveChildren(): Array[Object] = ???
+
+  private def enumerate(list: Array[Thread],
+                        offset: Int,
+                        recurse: Boolean): Int = ???
+
+  private def enumerate(list: Array[ThreadGroup],
+                        offset: Int,
+                        recurse: Boolean): Int = ???
+
+  private def list(prefix: String): Unit = ???
+
+  private def nonsecureDestroy(): Unit = ???
+
+  private def nonsecureInterrupt(): Unit = ???
+
+  private def nonsecureResume(): Unit = ???
+
+  private def nonsecureSetMaxPriority(priority: Int): Unit = ???
+
+  private def nonsecureStop(): Unit = ???
+
+  private def nonsecureSuspend(): Unit = ???
+
+  private def remove(group: ThreadGroup): Unit = ???
 
 }
 
