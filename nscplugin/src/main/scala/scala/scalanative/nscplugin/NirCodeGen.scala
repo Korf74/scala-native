@@ -1411,12 +1411,22 @@ abstract class NirCodeGen
     }
 
     def genStringConcat(leftp: Tree, rightp: Tree, focus: Focus): Focus = {
-      def stringify(sym: Symbol, focus: Focus) =
-        if (sym == StringClass) {
-          focus
-        } else {
-          genMethodCall(Object_toString, statically = false, focus.value, Seq(), focus)
+      def stringify(sym: Symbol, focus: Focus) = {
+        val isnull = focus withOp Op.Comp(Comp.Ieq, Rt.Object, focus.value, Val.Null)
+        val cond   = ValTree(isnull.value)
+        val thenp  = ContTree { focus =>
+          focus withValue Val.String("null")
         }
+        val elsep  = ContTree { inner =>
+          if (sym == StringClass) {
+            inner withValue focus.value
+          } else {
+            val meth = Object_toString
+            genMethodCall(meth, statically = false, focus.value, Seq(), inner)
+          }
+        }
+        genIf(Rt.String, cond, thenp, elsep, isnull)
+      }
 
       val left = {
         val typesym = leftp.tpe.typeSymbol
@@ -1439,9 +1449,17 @@ abstract class NirCodeGen
     }
 
     def genHashCode(argp: Tree, focus: Focus) = {
-      val meth = NObjectHashCodeMethod
-      val arg  = boxValue(argp.tpe, genExpr(argp, focus))
-      genMethodCall(meth, statically = false, arg.value, Seq(), arg)
+      val arg    = boxValue(argp.tpe, genExpr(argp, focus))
+      val isnull = arg withOp Op.Comp(Comp.Ieq, Rt.Object, arg.value, Val.Null)
+      val cond   = ValTree(isnull.value)
+      val thenp  = ContTree { focus =>
+        focus withValue Val.Int(0)
+      }
+      val elsep  = ContTree { focus =>
+        val meth = NObjectHashCodeMethod
+        genMethodCall(meth, statically = false, arg.value, Seq(), focus)
+      }
+      genIf(Type.Int, cond, thenp, elsep, isnull)
     }
 
     def genArrayOp(app: Apply, code: Int, focus: Focus): Focus = {
@@ -1452,12 +1470,15 @@ abstract class NirCodeGen
       val array = genExpr(arrayp, focus)
       def elemcode = genArrayCode(arrayp.tpe)
       val method =
-        if (code == ARRAY_CLONE) RuntimeArrayCloneMethod(elemcode)
-        else if (scalaPrimitives.isArrayGet(code))
+        if (code == ARRAY_CLONE) {
+          RuntimeArrayCloneMethod(elemcode)
+        } else if (scalaPrimitives.isArrayGet(code)) {
           RuntimeArrayApplyMethod(elemcode)
-        else if (scalaPrimitives.isArraySet(code))
+        } else if (scalaPrimitives.isArraySet(code)) {
           RuntimeArrayUpdateMethod(elemcode)
-        else RuntimeArrayLengthMethod(elemcode)
+        } else {
+          RuntimeArrayLengthMethod(elemcode)
+        }
 
       genMethodCall(method, statically = true, array.value, argsp, array)
     }

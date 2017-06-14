@@ -6,14 +6,13 @@ import scala.scalanative.native.{
   CFunctionPtr1,
   CInt,
   CSize,
-  CUnsignedInt,
   Ptr,
   extern,
   name
 }
 import scala.scalanative.posix.sched.sched_param
+import scala.scalanative.posix.sys.time.timespec
 import scala.scalanative.posix.sys.types._
-import scala.scalanative.posix.time.timespec
 
 // SUSv2 version is used for compatibility
 // see http://pubs.opengroup.org/onlinepubs/007908799/xsh/threads.html
@@ -74,11 +73,6 @@ object pthread {
                                 stacksize: CSize): CInt = extern
 
   def pthread_cancel(thread: pthread_t): CInt = extern
-
-  def pthread_cleanup_push(routine: CFunctionPtr1[Ptr[Byte], Unit],
-                           arg: Ptr[Byte]): Unit = extern
-
-  def pthread_cleanup_pop(execute: CInt): Unit = extern
 
   def pthread_cond_broadcast(cond: Ptr[pthread_cond_t]): CInt = extern
 
@@ -228,9 +222,6 @@ object pthread {
   type routine = CFunctionPtr0[Unit]
 
   // Macros
-  @name("scalanative_pthread_barrier_serial_thread")
-  def PTHREAD_BARRIER_SERIAL_THREAD: CInt = extern
-
   @name("scalanative_pthread_cancel_asynchronous")
   def PTHREAD_CANCEL_ASYNCHRONOUS: CInt = extern
 
