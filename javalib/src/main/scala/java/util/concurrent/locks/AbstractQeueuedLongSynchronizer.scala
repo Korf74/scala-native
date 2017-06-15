@@ -5,21 +5,23 @@ package concurrent.locks
 
 import java.util
 
-abstract class AbstractQueuedSynchronizer extends AbstractOwnableSynchronizer
+// TODO check methods, I only copy pasted AQS
+
+abstract class AbstractQeueuedLongSynchronizer extends AbstractOwnableSynchronizer
   with java.io.Serializable {
 
-  import AbstractQueuedSynchronizer._
+  import AbstractQeueuedLongSynchronizer._
 
   //volatile
   private var head: Node = _
 
   //volatile
-  private var tail: Node = _
+  private val tail: Node = _
 
   // atomic
   private var state: Int = _
 
-  protected final def getState: Int = state
+  protected final def getState(): Int = state
 
   protected final def setState(newState: Int): Unit = state = newState
 
@@ -68,7 +70,7 @@ abstract class AbstractQueuedSynchronizer extends AbstractOwnableSynchronizer
     if(ws < 0)
       compareAndSetWaitStatus(node, ws, 0)
 
-    var s: Node = node.next
+    val s: Node = node.next
     if(s == null || s.waitStatus > 0) {
       s = null
       var t: Node = tail
@@ -83,8 +85,7 @@ abstract class AbstractQueuedSynchronizer extends AbstractOwnableSynchronizer
   }
 
   private def doRealeaseShared(): Unit = {
-    var loop = true
-    while(loop) {
+    while(true) {
       val h: Node = head
       if(h != null && h != tail) {
         val ws: Int = h.waitStatus
@@ -97,7 +98,7 @@ abstract class AbstractQueuedSynchronizer extends AbstractOwnableSynchronizer
           continue
       }
       if(h == head)
-        loop = false
+        break
     }
   }
 
@@ -135,7 +136,7 @@ abstract class AbstractQueuedSynchronizer extends AbstractOwnableSynchronizer
         pred.thread != null) {
         val next: Node = node.next
         if(next != null && next.waitStatus <= 0)
-          compareAndSetNext(pred, pred.next, next)
+          compareAndSetNext(pred, prednext, next)
       } else {
         unparkSuccessor(node)
       }
@@ -154,12 +155,12 @@ abstract class AbstractQueuedSynchronizer extends AbstractOwnableSynchronizer
     try {
       var interrupted = false
       while(true) {
-        val p: Node = node.predecessor()
+        final val p: Node = node.predecessor()
         if(p == head && tryAcquire(arg)) {
-          setHead(node)
+          sethead(node)
           p.next = null
           failed = false
-          return interrupted
+          interrupted
         }
         if(shouldParkAfterFailedAcquire(p, node) &&
           parkAndCheckInterrupt())
@@ -171,19 +172,18 @@ abstract class AbstractQueuedSynchronizer extends AbstractOwnableSynchronizer
     }
   }
 
-  private def doAcquireNanos(arg: Int, timeout: Long): Boolean = {
-    var nanosTimeout = timeout
-    var lastTime: Long = System.nanoTime()
-    val node: Node = addWaiter(Node.EXCLUSIVE)
+  private def doAcquireNanos(arg: Int, nanosTimeout: Long): Boolean = {
+    val lastTime: Long = System.nanoTime()
+    final val node: Node = addWaiter(Node.EXCLUSIVE)
     var failed = true
     try {
       while(true) {
-        val p: Node = node.predecessor()
+        final val p: Node = node.predecessor()
         if(p == head && tryAcquire(arg)) {
           setHead(node)
           p.next = null
           failed = false
-          return true
+          true
         }
         if(nanosTimeout <= 0)
           return false
@@ -201,7 +201,7 @@ abstract class AbstractQueuedSynchronizer extends AbstractOwnableSynchronizer
         cancelAcquire(node)
     }
   }
-// TODO check from here
+
   private def doAcquireShared(arg: Int): Unit = {
     final val node: Node = addWaiter(Node.SHARED)
     var failed = true
@@ -364,7 +364,7 @@ abstract class AbstractQueuedSynchronizer extends AbstractOwnableSynchronizer
     var st: Thread = null
 
     if(((h = head) != null && (s = h.next) != null &&
-        s.prev == head && (st = s.thread) != null) ||
+      s.prev == head && (st = s.thread) != null) ||
       ((h = head) != null && (s = h.next) != null &&
         s.prev == head && (st = s.thread) != null))
       st
@@ -755,7 +755,7 @@ abstract class AbstractQueuedSynchronizer extends AbstractOwnableSynchronizer
       !timedout
     }
 
-    final def isOwnedBy(sync: AbstractQueuedSynchronizer): Boolean = sync == AbstractQueuedSynchronizer.this
+    final def isOwnedBy(sync: AbstractQeueuedLongSynchronizer): Boolean = sync == AbstractQeueuedLongSynchronizer.this
 
     protected final def hasWaiters(): Boolean = {
       if(!isHeldExclusively())
@@ -816,7 +816,7 @@ abstract class AbstractQueuedSynchronizer extends AbstractOwnableSynchronizer
     */
 }
 
-object AbstractQueuedSynchronizer {
+object AbstractQeueuedLongSynchronizer {
 
   private final val serialVersionUID: Long = 7373984972572414691L
 
