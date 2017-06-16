@@ -1,6 +1,11 @@
 package java.util.concurrent.locks
+import java.util.concurrent.TimeUnit
 
 class ReentrantReadWriteLock extends ReadWriteLock with java.io.Serializable {
+
+  import ReentrantLock._
+  import FairSync._
+  import NonfairSync._
 
   private final var readerLock: ReentrantReadWriteLock.ReadLock = new ReadLock(this)
 
@@ -11,6 +16,66 @@ class ReentrantReadWriteLock extends ReadWriteLock with java.io.Serializable {
   def writeLock(): ReentrantReadWriteLock.WriteLock = writerLock
 
   def readLock(): ReentrantReadWriteLock.ReadLock = readerLock
+
+  final def isFair: Boolean = sync.isInstanceOf[FairSync]
+
+  protected def getOwner: Thread = sync.getOwner
+
+  def getReadLockCount: Int = sync.getReadLockCount
+
+  def isWriteLocked: Boolean = sync.isWriteLocked
+
+  def isWriteLockedByCurrentThread: Boolean = sync.isHeldExclusively
+
+  def getWriteHoldCount: Int = sync.getWriteHoldCount
+
+  def getReadHoldCount: Int = sync.getReadHoldCount
+
+  protected def getQueuedWriterThreads: java.util.Collection[Thread] =
+    sync.getExclusiveQueuedThreads
+
+  protected def getQueuedReaderThreads: java.util.Collection[Thread] =
+    sync.getSharedQueuedThreads
+
+  final def hasQueuedThreads: Boolean = sync.hasQueuedThreads
+
+  final def hasQueuedThread(thread: Thread) = sync.isQueued(thread)
+
+  final def getQueueLength: Int = sync.getQueueLength
+
+  protected def getQueuedThreads: java.util.Collection[Thread] = sync.getQueuedThreads
+
+  def hasWaiters(condition: Condition): Boolean = {
+    if(condition == null)
+      throw new NullPointerException()
+    if(!(condition.isInstanceOf[AbstractQueuedSynchronizer.ConditionObject]))
+      throw new IllegalArgumentException("not owner")
+    sync.hasWaiters(condition.asInstanceOf[AbstractQueuedSynchronizer])
+  }
+
+  def getWaitQueueLength(condition: Condition): Int = {
+    if(condition == null)
+      throw new NullPointerException()
+    if(!(condition.isInstanceOf[AbstractQueuedSynchronizer.ConditionObject]))
+      throw new IllegalArgumentException("not owner")
+    sync.getWaitQueueLength(condition.asInstanceOf[AbstractQueuedSynchronizer])
+  }
+
+  protected def getWaitingThreads(condition: Condition): java.util.Collection[Thread] = {
+    if(condition == null)
+      throw new NullPointerException()
+    if(!(condition.isInstanceOf[AbstractQueuedSynchronizer.ConditionObject]))
+      throw new IllegalArgumentException("not owner")
+    sync.getWaitingThreads(condition.asInstanceOf[AbstractQueuedSynchronizer])
+  }
+
+  override def toString: String = {
+    val c = sync.getCount
+    val w = Sync.exclusiveCount(c)
+    val r = Sync.sharedCount(c)
+
+    super.toString + "[Write locks = " + w + ", Read locks = " + r + "]"
+  }
 
 
 }
@@ -167,7 +232,82 @@ object ReentrantReadWriteLock {
       }
     }
 
-    // TODO l 523
+    final def tryWriteLock(): Boolean = {
+      val current: Thread = Thread.currentThread()
+      val c: Int = getState
+      if(c != 0) {
+        val w = exclusiveCount(c)
+        if(w == 0 || current != getExclusiveOwnerThread)
+          return false
+        if(w == MAX_COUNT)
+          throw new Error("Maximum lock count exceeded")
+      }
+      if(!compareAndSetState(c, c + 1))
+        return false
+      setExclusiveOwnerThread(current)
+      true
+    }
+
+    final def tryReadLock(): Boolean = {
+      val current: Thread = Thread.currentThread()
+      while(true) {
+        val c: Int = getState
+        if(exclusiveCount(c) != 0 && getExclusiveOwnerThread != current)
+          return false
+        val r: Int = sharedCount(c)
+        if(r == MAX_COUNT)
+          throw new Error("Maximum lock count exceeded")
+        if(compareAndSetState(c, c + SHARED_UNIT)) {
+          if(r == 0) {
+            firstReader = current
+            firstReaderHoldCount = 1
+          } else if(firstReader == current) {
+            firstReaderHoldCount += 1
+          } else {
+            val rh: HoldCounter = cacheHoldCounter
+            if(rh == null || rh.tid != current.getId)
+              cacheHoldCounter = rh = readHolds.get()
+            else if(rh.count == 0)
+              readHolds.set(rh)
+            rh.count += 1
+          }
+          true
+        }
+      }
+    }
+
+    override protected final def isHeldExclusively: Boolean = getExclusiveOwnerThread == Thread.currentThread()
+
+    final def newCondition: ConditionObject = new ConditionObject()
+
+    final def getOwner: Thread = if(exclusiveCount(getState) == 0) null else getExclusiveOwnerThread
+
+    final def getReadLockCount: Int = sharedCount(getState)
+
+    final def isWriteLocked: Boolean = sharedCount(getState) != 0
+
+    final def getWriteHoldCount: Int = if(isHeldExclusively) exclusiveCount(getState) else 0
+
+    final def getReadHoldCount: Int = {
+      if(getReadLockCount == 0) return 0
+      val current: Thread = Thread.currentThread()
+      if(firstReader == current) return firstReaderHoldCount
+
+      val rh: HoldCounter = cacheHoldCounter
+      if(rh != null && rh.tid == current.getId) return rh.count
+
+      val count: Int = readHolds.get.count
+      if(count == 0) readHolds.remove()
+      count
+    }
+
+    private def readObject(s: java.io.ObjectInputStream): Unit = {
+      s.defaultReadObject()
+      readHolds = new ThreadLocalHoldCounter()
+      setState(0)
+    }
+
+    final def getCount: Int = getState
 
 
   }
@@ -198,6 +338,105 @@ object ReentrantReadWriteLock {
       override def initialValue(): HoldCounter = new HoldCounter()
 
     }
+
+  }
+
+  final class NonfairSync extends Sync {
+
+    override def writerShouldBlock(): Boolean = false
+
+    override def readerShouldBlock(): Boolean = apparentlyFirstQueuedIsExclusive()
+
+  }
+
+  object NonfairSync {
+
+    private final val serialVersionUID: Long = -8159625535654395037L
+
+  }
+
+  final class FairSync extends Sync {
+
+    override def writerShouldBlock(): Boolean = hasQueuedPredecessors
+
+    override def readerShouldBlock(): Boolean = hasQueuedPredecessors
+
+  }
+
+  object FairSync {
+
+    private final val serialVersionUID: Long = -2274990926593161451L
+
+  }
+
+  class ReadLock extends Lock with java.io.Serializable {
+
+    private final var sync: Sync = _
+
+    protected def this(lock: ReentrantReadWriteLock) =
+      sync = lock.sync
+
+    def lock: Unit = sync.acquireShared(1)
+
+    override def lockInterruptibly(): Unit = sync.acquireSharedInterruptibly(1)
+
+    override def tryLock(): Boolean = sync.tryReadLock()
+
+    override def tryLock(timeout: Long, unit: TimeUnit): Boolean =
+      sync.tryAcquireSharedNanos(1, unit.toNanos(timeout))
+
+    override def unlock(): Unit = sync.releaseShared(1)
+
+    override def newCondition(): Condition = throw new UnsupportedOperationException()
+
+    override def toString: String = {
+      val r = sync.getReadLockCount
+      super.toString + "[Read lock = " + r + "]"
+    }
+
+  }
+
+  object ReadLock {
+
+    private final val serialVersionUID: Long = -5992448646407690164L
+
+  }
+
+  class WriteLock extends Lock with java.io.Serializable {
+
+    private final var sync: Sync = _
+
+    protected def this(lock: ReentrantReadWriteLock) =
+    sync = lock.sync
+
+    def lock: Unit = sync.acquire(1)
+
+    override def lockInterruptibly(): Unit = sync.acquireInterruptibly(1)
+
+    override def tryLock(): Boolean = sync.tryWriteLock()
+
+    override def tryLock(timeout: Long, unit: TimeUnit): Boolean =
+      sync.tryAcquireSharedNanos(1, unit.toNanos(timeout))
+
+    override def unlock(): Unit = sync.release(1)
+
+    override def newCondition(): Condition = sync.newCondition
+
+    override def toString: String = {
+      val o: Thread = sync.getOwner
+      val s: String = if(o == null) "[Unlocked]" else "[Locked by thread " +o.getName + "]"
+      super.toString + s
+    }
+
+    def isHeldByCurrentThread: Boolean = sync.isHeldExclusively
+
+    def getHoldCount = sync.getWriteHoldCount
+
+  }
+
+  object WriteLock {
+
+    private final val serialVersionUID: Long = -5992448646407690164L
 
   }
 
