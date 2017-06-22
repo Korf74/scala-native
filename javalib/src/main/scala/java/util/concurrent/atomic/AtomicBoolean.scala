@@ -29,6 +29,6 @@ class AtomicBoolean(private[this] var value: Boolean) extends Serializable {
     old
   }
 
-  override def toString(): String =
-    value.toString()
+  override def toString: String =
+    value.toString
 }
