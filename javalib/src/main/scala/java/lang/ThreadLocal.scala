@@ -8,10 +8,8 @@ class ThreadLocal[T] {
 
   import ThreadLocal._
 
-  private var hasValue: Boolean = false
-  private var v: T              = _
-
-  private final val reference: Reference[ThreadLocal[T]] = new WeakReference[ThreadLocal[T]](this)
+  private final val reference: Reference[ThreadLocal[T]] =
+    new WeakReference[ThreadLocal[T]](this)
 
   private final val hash: Int = hashCounter.fetchAdd(0x61c88647 << 1)
 
@@ -20,12 +18,12 @@ class ThreadLocal[T] {
   @SuppressWarnings("unchecked")
   def get(): T = {
     val currentThread: Thread = Thread.currentThread()
-    var values: Values = values(currentThread)
-    if(values != null) {
+    var values: Values        = values(currentThread)
+    if (values != null) {
       val table: Array[Object] = values.table
-      val index: Int = hash & values.mask
-      if(this.reference == table[index]) {
-        table[index + 1].asInstanceOf[T]
+      val index: Int           = hash & values.mask
+      if (this.reference == table(index)) {
+        table(index + 1).asInstanceOf[T]
       }
     } else {
       values = initializeValues(currentThread)
@@ -36,8 +34,8 @@ class ThreadLocal[T] {
 
   def set(o: T): Unit = {
     val currentThread: Thread = Thread.currentThread()
-    var values: Values = values(currentThread)
-    if(values == null) {
+    var values: Values        = values(currentThread)
+    if (values == null) {
       values = initializeValues(currentThread)
     }
 
@@ -46,13 +44,14 @@ class ThreadLocal[T] {
 
   def remove(): Unit = {
     val currentThread: Thread = Thread.currentThread()
-    var values: Values = values(currentThread)
-    if(values != null) {
+    var values: Values        = values(currentThread)
+    if (values != null) {
       values.remove(this)
     }
   }
 
-  def initializeValues(current: Thread): Values = current.localValues = new Values
+  def initializeValues(current: Thread): Values =
+    current.localValues = new Values
 
   def values(current: Thread): Values = current.localValues
 }
@@ -93,18 +92,19 @@ object ThreadLocal {
     @SuppressWarnings("unchecked")
     private def inheritValues(fromParent: Values): Unit = {
       val table: Array[Object] = table
-      var i:  Int = table.length
-      while(i >= 0) {
+      var i: Int               = table.length
+      while (i >= 0) {
         val k: Object = table(i)
 
-        if(k == null || k == TOMBSTONE) {
+        if (k == null || k == TOMBSTONE) {
           continue
         }
 
-        val reference: Reference[InheritableThreadLocal[_]] = k.asInstanceOf[Reference[InheritableThreadLocal[_]]]
+        val reference: Reference[InheritableThreadLocal[_]] =
+          k.asInstanceOf[Reference[InheritableThreadLocal[_]]]
 
         val key: InheritableThreadLocal[_] = reference.get()
-        if(key != null) {
+        if (key != null) {
           table(i + 1) = key.childValue(fromParent.table(i + 1))
         } else {
           table(i) = TOMBSTONE
@@ -124,48 +124,54 @@ object ThreadLocal {
     }
 
     private def initializeTable(capacity: Int): Unit = {
-      this.table = new Object[capacity << 1]
+      this.table = new Array[Object](capacity << 1)
       this.mask = table.length - 1
       this.clean = 0
       this.maximumLoad = capacity * 2 / 3
     }
 
     private def cleanUp(): Unit = {
-      if(rehash) return
-      if(size == 0) return
+      if (rehash) return
+      if (size == 0) return
 
-      val index: Int = clean
+      var index: Int           = clean
       val table: Array[Object] = table
-      var counter = table.length
+      var counter              = table.length
 
-      while(counter > 0) {
+      var continue: scala.Boolean = false
+
+      while (counter > 0) {
+        continue = false
         val k: Object = table(index)
 
-        if(k == TOMBSTONE || k == null) continue
+        if (k == TOMBSTONE || k == null) continue = true
 
-        val reference: Reference[ThreadLocal[_]] = k.asInstanceOf[Reference[ThreadLocal[_]]]
-        if(reference.get() == null) {
-          table(index) = TOMBSTONE
-          table(index + 1) = null
-          tombstones -= 1
-          size -= 1
+        if (!continue) {
+          val reference: Reference[ThreadLocal[_]] =
+            k.asInstanceOf[Reference[ThreadLocal[_]]]
+          if (reference.get() == null) {
+            table(index) = TOMBSTONE
+            table(index + 1) = null
+            tombstones -= 1
+            size -= 1
+          }
+
+          counter >>= 1
+          index = next(index)
         }
-
-        counter >>= 1
-        index = next(index)
       }
 
       clean = index
     }
 
-    private def rehash(): Boolean = {
-      if(tombstones + size < maximumLoad) false
+    private def rehash(): scala.Boolean = {
+      if (tombstones + size < maximumLoad) false
 
       val capacity: Int = table.length >> 1
 
       var newCapacity: Int = capacity
 
-      if(size > (capacity >> 1)) {
+      if (size > (capacity >> 1)) {
         newCapacity = capacity << 1
       }
 
@@ -174,20 +180,25 @@ object ThreadLocal {
 
       tombstones = 0
 
-      if(size == 0) true
+      if (size == 0) return true
 
-      var i: Int = oldTable.length - 2
-      while(i >= 0) {
+      var i: Int                  = oldTable.length - 2
+      var continue: scala.Boolean = false
+      while (i >= 0) {
+        continue = false
         val k: Object = oldTable(i)
-        if(k == null || k == TOMBSTONE) continue
+        if (k == null || k == TOMBSTONE) continue = true
 
-        val reference: Reference[ThreadLocal[_]] = k.asInstanceOf[Reference[ThreadLocal[_]]]
+        if (!continue) {
+          val reference: Reference[ThreadLocal[_]] =
+            k.asInstanceOf[Reference[ThreadLocal[_]]]
 
-        val key: ThreadLocal[_] = reference.get()
-        if(key != null) add(key, oldTable(i + 1))
-        else size -= 1
+          val key: ThreadLocal[_] = reference.get()
+          if (key != null) add(key, oldTable(i + 1))
+          else size -= 1
 
-        i -= 2
+          i -= 2
+        }
       }
 
       true
@@ -195,9 +206,9 @@ object ThreadLocal {
 
     def add(key: ThreadLocal[_], value: Object) = {
       var index: Int = key.hash & mask
-      while(true) {
+      while (true) {
         val k: Object = table(index)
-        if(k == null) {
+        if (k == null) {
           table(index) = key.reference
           table(index + 1) = value
           return
@@ -213,16 +224,16 @@ object ThreadLocal {
       var firstTombstone: Int = -1
 
       var index: Int = key.hash & mask
-      while(true) {
+      while (true) {
         val k: Object = table(index)
 
-        if(k == key.reference) {
+        if (k == key.reference) {
           table(index + 1) = value
           return
         }
 
-        if(k == null) {
-          if(firstTombstone == -1) {
+        if (k == null) {
+          if (firstTombstone == -1) {
             table(index) = key.reference
             table(index + 1) = value
             size += 1
@@ -236,7 +247,7 @@ object ThreadLocal {
           return
         }
 
-        if(firstTombstone == -1 && k == TOMBSTONE) firstTombstone = index
+        if (firstTombstone == -1 && k == TOMBSTONE) firstTombstone = index
 
         index = next(index)
       }
@@ -244,12 +255,12 @@ object ThreadLocal {
 
     def getAfterMiss(key: ThreadLocal[_]) = {
       val table: Array[Object] = table
-      var index: Int = key.hash && mask
+      var index: Int           = key.hash && mask
 
-      if(table(index) == null) {
+      if (table(index) == null) {
         val value: Object = key.initialValue()
 
-        if(this.table == table && table(index) == null) {
+        if (this.table == table && table(index) == null) {
           table(index) = key.reference
           table(index + 1) = value
           size += 1
@@ -265,15 +276,15 @@ object ThreadLocal {
       var firstTombstone: Int = -1
 
       var index = next(index)
-      while(true) {
+      while (true) {
         val reference: Object = table(index)
-        if(reference == key.reference) table(index + 1)
+        if (reference == key.reference) table(index + 1)
 
-        if(reference == null) {
+        if (reference == null) {
           val value: Object = key.initialValue()
 
-          if(this.table == table) {
-            if(firstTombstone > -1 && table(firstTombstone) == TOMBSTONE) {
+          if (this.table == table) {
+            if (firstTombstone > -1 && table(firstTombstone) == TOMBSTONE) {
               table(firstTombstone) = key.reference
               table(firstTombstone + 1) = value
               tombstones -= 1
@@ -282,7 +293,7 @@ object ThreadLocal {
               value
             }
 
-            if(table(index) == null) {
+            if (table(index) == null) {
               table(index) = key.reference
               table(index + 1) = value
               size += 1
@@ -296,7 +307,8 @@ object ThreadLocal {
           value
         }
 
-        if(firstTombstone == -1 && reference == TOMBSTONE) firstTombstone = index
+        if (firstTombstone == -1 && reference == TOMBSTONE)
+          firstTombstone = index
 
         index = next(index)
       }
@@ -306,10 +318,10 @@ object ThreadLocal {
       cleanUp()
 
       var index: Int = key.hash & mask
-      while(true) {
+      while (true) {
         val reference: Object = table(index)
 
-        if(reference == key.reference) {
+        if (reference == key.reference) {
           table(index) = TOMBSTONE
           table(index + 1) = null
           tombstones += 1
@@ -317,7 +329,7 @@ object ThreadLocal {
           return
         }
 
-        if(reference == null) return
+        if (reference == null) return
 
         index = next(index)
       }

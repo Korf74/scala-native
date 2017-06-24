@@ -8,9 +8,9 @@ class ThreadGroup extends Thread.UncaughtExceptionHandler {
 
   var name: String = "system"
 
-  private var daemon: Boolean = false
+  private var daemon: scala.Boolean = false
 
-  private val destroyed: Boolean = false
+  private val destroyed: scala.Boolean = false
 
   private val groups: List[ThreadGroup] = List.empty[ThreadGroup]
 
@@ -36,11 +36,11 @@ class ThreadGroup extends Thread.UncaughtExceptionHandler {
   }
 
   def activeCount(): Int = {
-    var count: Int = 0
+    var count: Int                    = 0
     var groupsCopy: List[ThreadGroup] = null
-    var threadsCopy: List[Thread] = null
+    var threadsCopy: List[Thread]     = null
     lock.synchronized {
-      if(destroyed) return 0
+      if (destroyed) return 0
       threadsCopy = threads.clone().asInstanceOf[List[Thread]]
       groupsCopy = groups.clone().asInstanceOf[List[ThreadGroup]]
     }
@@ -53,10 +53,10 @@ class ThreadGroup extends Thread.UncaughtExceptionHandler {
   }
 
   def activeGroupCount(): Int = {
-    var count: Int = 0
+    var count: Int                    = 0
     var groupsCopy: List[ThreadGroup] = null
     lock.synchronized {
-      if(destroyed) return 0
+      if (destroyed) return 0
       count = groups.size
       groupsCopy = groups.clone().asInstanceOf[List[ThreadGroup]]
     }
@@ -67,17 +67,17 @@ class ThreadGroup extends Thread.UncaughtExceptionHandler {
   }
 
   @deprecated
-  def allowThreadSuspension(b: Boolean): Boolean = false
+  def allowThreadSuspension(b: scala.Boolean): scala.Boolean = false
 
   def checkAccess(): Unit = {
     val securityManager: SecurityManager = System.getSecurityManager
-    if(securityManager != null) securityManager.checkAccess(this)
+    if (securityManager != null) securityManager.checkAccess(this)
   }
 
   def destroy(): Unit = {
     checkAccess()
     lock.synchronized {
-      if(destroyed)
+      if (destroyed)
         throw new IllegalThreadStateException(
           "The thread group " + name + " is already destroyed!")
       nonsecureDestroy()
@@ -89,7 +89,7 @@ class ThreadGroup extends Thread.UncaughtExceptionHandler {
     enumerate(list, 0, true)
   }
 
-  def enumerate(list: Array[Thread], recurse: Boolean): Int = {
+  def enumerate(list: Array[Thread], recurse: scala.Boolean): Int = {
     checkAccess()
     enumerate(list, 0, recurse)
   }
@@ -99,7 +99,7 @@ class ThreadGroup extends Thread.UncaughtExceptionHandler {
     enumerate(list, 0, true)
   }
 
-  def enumerate(list: Array[ThreadGroup], recurse: Boolean): Int = {
+  def enumerate(list: Array[ThreadGroup], recurse: scala.Boolean): Int = {
     checkAccess()
     enumerate(list, 0, recurse)
   }
@@ -109,25 +109,25 @@ class ThreadGroup extends Thread.UncaughtExceptionHandler {
   def getName: String = name
 
   def getParent: ThreadGroup = {
-    if(parent != null) parent.checkAccess()
+    if (parent != null) parent.checkAccess()
     parent
   }
 
-  def interrupt: Unit = {
+  def interrupt(): Unit = {
     checkAccess()
     nonsecureInterrupt()
   }
 
-  def isDaemon: Boolean = daemon
+  def isDaemon: scala.Boolean = daemon
 
-  def isDestroyed: Boolean = destroyed
+  def isDestroyed: scala.Boolean = destroyed
 
   def list(): Unit = list("")
 
-  def parentOf(group: ThreadGroup): Boolean = {
+  def parentOf(group: ThreadGroup): scala.Boolean = {
     var parent: ThreadGroup = group
-    while(parent != null) {
-      if(this == parent) return true
+    while (parent != null) {
+      if (this == parent) return true
       parent = parent.getParent
     }
     false
@@ -139,7 +139,7 @@ class ThreadGroup extends Thread.UncaughtExceptionHandler {
     nonsecureResume()
   }
 
-  def setDaemon(daemon: Boolean): Unit = {
+  def setDaemon(daemon: scala.Boolean): Unit = {
     checkAccess()
     this.daemon = daemon
   }
@@ -152,13 +152,13 @@ class ThreadGroup extends Thread.UncaughtExceptionHandler {
      * http://bugs.sun.com/bugdatabase/view_bug.do?bug_id=4708197
      * We agreed to follow bug for now to prevent breaking apps
      */
-    if(priority > Thread.MAX_PRIORITY) return
-    if(priority < Thread.MIN_PRIORITY) {
+    if (priority > Thread.MAX_PRIORITY) return
+    if (priority < Thread.MIN_PRIORITY) {
       this.maxPriority = Thread.MIN_PRIORITY
       return
     }
     val new_priority: Int = {
-      if(parent != null && parent.maxPriority < priority)
+      if (parent != null && parent.maxPriority < priority)
         parent.maxPriority
       else
         priority
@@ -179,68 +179,75 @@ class ThreadGroup extends Thread.UncaughtExceptionHandler {
     nonsecureSuspend()
   }
 
-  override def toString(): String = {
+  override def toString: String = {
     getClass.getName + "[name=" + name + ",maxpri=" + maxPriority + "]"
   }
 
   def uncaughtException(thread: Thread, throwable: Throwable): Unit = {
-    if(parent != null) {
+    if (parent != null) {
       parent.uncaughtException(thread, throwable)
       return
     }
-    val defaultHandler: Thread.UncaughtExceptionHandler = Thread.getDefaultUncaughtExceptionHandler
-    if(defaultHandler != null) {
+    val defaultHandler: Thread.UncaughtExceptionHandler =
+      Thread.getDefaultUncaughtExceptionHandler
+    if (defaultHandler != null) {
       defaultHandler.uncaughtException(thread, throwable)
       return
     }
-    if(throwable.isInstanceOf[ThreadDeath]) return
+    if (throwable.isInstanceOf[ThreadDeath]) return
     System.err.println("Uncaught exception in " + thread.getName + ":")
     throwable.printStackTrace()
   }
 
   def add(thread: Thread): Unit = {
     lock.synchronized {
-      if(destroyed)
-        throw new IllegalThreadStateException("The thread group is already destroyed!")
+      if (destroyed)
+        throw new IllegalThreadStateException(
+          "The thread group is already destroyed!")
       thread :: threads
     }
   }
 
   def checkGroup(): Unit = {
     lock.synchronized {
-      if(destroyed)
-        throw new IllegalThreadStateException("The thread group is already destroyed!")
+      if (destroyed)
+        throw new IllegalThreadStateException(
+          "The thread group is already destroyed!")
     }
   }
 
   def remove(thread: Thread): Unit = {
     lock.synchronized {
-      if(destroyed) return
+      if (destroyed) return
       threads.filter(_ == thread)
     }
   }
 
   def add(group: ThreadGroup): Unit = {
     lock.synchronized {
-      if(destroyed)
-        throw new IllegalThreadStateException("The thread group is already destroyed!")
+      if (destroyed)
+        throw new IllegalThreadStateException(
+          "The thread group is already destroyed!")
       group :: groups
     }
   }
 
   @SuppressWarnings("unused")
   private def getActiveChildren(): Array[Object] = {
-    val threadsCopy: util.ArrayList[Thread] = new util.ArrayList[Thread](threads.size)
-    val groupsCopy: util.ArrayList[ThreadGroup] = new util.ArrayList[ThreadGroup](groups.size)
+    val threadsCopy: util.ArrayList[Thread] =
+      new util.ArrayList[Thread](threads.size)
+    val groupsCopy: util.ArrayList[ThreadGroup] =
+      new util.ArrayList[ThreadGroup](groups.size)
 
     lock.synchronized {
-      if(destroyed)
+      if (destroyed)
         return new Array[Object](2)(null, null)
       threads.foreach(threadsCopy.add)
       groups.foreach(groupsCopy.add)
     }
 
-    val activeThreads: util.ArrayList[Thread] = new util.ArrayList[Thread](threadsCopy.size())
+    val activeThreads: util.ArrayList[Thread] =
+      new util.ArrayList[Thread](threadsCopy.size())
 
     // filter out alive threads
     //TODO from here, also ask Denys about java - Scala collections
@@ -249,11 +256,11 @@ class ThreadGroup extends Thread.UncaughtExceptionHandler {
 
   private def enumerate(list: Array[Thread],
                         offset: Int,
-                        recurse: Boolean): Int = ???
+                        recurse: scala.Boolean): Int = ???
 
   private def enumerate(list: Array[ThreadGroup],
                         offset: Int,
-                        recurse: Boolean): Int = ???
+                        recurse: scala.Boolean): Int = ???
 
   private def list(prefix: String): Unit = ???
 
