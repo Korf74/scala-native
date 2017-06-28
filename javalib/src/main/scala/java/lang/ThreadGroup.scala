@@ -71,10 +71,7 @@ class ThreadGroup extends Thread.UncaughtExceptionHandler {
   @deprecated
   def allowThreadSuspension(b: scala.Boolean): scala.Boolean = false
 
-  def checkAccess(): Unit = {
-    val securityManager: SecurityManager = System.getSecurityManager
-    if (securityManager != null) securityManager.checkAccess(this)
-  }
+  def checkAccess(): Unit = ()
 
   def destroy(): Unit = {
     checkAccess()

@@ -106,12 +106,9 @@ class Thread extends Runnable {
 
   def this(group: ThreadGroup, target: Runnable, name: String, stacksize: scala.Long) = {
     val currentThread: Thread = VMThreadManager.currentThread
-    val securityManager: SecurityManager = System.getSecurityManager
 
     var threadGroup: ThreadGroup = null
     if(group != null) {
-      if(securityManager != null)
-        securityManager.checkAccess(group)
       threadGroup = group
     } else if(securityManager != null)
       threadGroup = securityManager.getThreadGroup
@@ -151,11 +148,7 @@ class Thread extends Runnable {
 
   def this(group: ThreadGroup, name: String) = this(group, null, name, 0)
 
-  final def checkAccess(): Unit = {
-    val securityManager: SecurityManager = System.getSecurityManager
-    if(securityManager != null)
-      securityManager.checkAccess(this)
-  }
+  final def checkAccess(): Unit = ()
 
   @deprecated
   def countStackFrames: Int = 0 //deprecated
@@ -173,22 +166,17 @@ class Thread extends Runnable {
       //    3) the caller's class loader is not the same as or an
       //    ancestor of contextClassLoader
       // are satisfied we should perform a security check.
-      val securityManager: SecurityManager = System.getSecurityManager
-      if(securityManager != null) {
         //the first condition is satisfied
-        val callerClassLoader: ClassLoader = VMClassRegistry.getClassLoader(VMStack.getCallerClass(0))
-        if(callerClassLoader != null) {
-          //the second condition is satisfied
-          var classLoader: ClassLoader = contextClassLoader
-          while(classLoader != null) {
-            if(classLoader == callerClassLoader) {
-              //the third condition is not satisfied
-              return contextClassLoader
-            }
-            classLoader = classLoader.getParent
+      val callerClassLoader: ClassLoader = VMClassRegistry.getClassLoader(VMStack.getCallerClass(0))
+      if(callerClassLoader != null) {
+        //the second condition is satisfied
+        var classLoader: ClassLoader = contextClassLoader
+        while(classLoader != null) {
+          if(classLoader == callerClassLoader) {
+            //the third condition is not satisfied
+            return contextClassLoader
           }
-          //the third condition is satisfied
-          securityManager.checkPermission(RuntimePermissionCollection.GET_CLASS_LOADER_PERMISSION)
+          classLoader = classLoader.getParent
         }
       }
       contextClassLoader
@@ -200,12 +188,6 @@ class Thread extends Runnable {
   final def getPriority: Int = priority
 
   def getStackTrace: Array[StackTraceElement] = {
-    if(Thread.currentThread() != this) {
-      val securityManager: SecurityManager = System.getSecurityManager
-      if(securityManager != null) {
-        securityManager.checkPermission(RuntimePermissionCollection.GET_STACK_TRACE_PERMISSION)
-      }
-    }
     val ste: Array[StackTraceElement] = VMStack.getThreadStackTrace(this)
     if(ste != null) ste else new Array[StackTraceElement](0)
   }
@@ -310,14 +292,8 @@ class Thread extends Runnable {
     }
   }
 
-  def setContextClassLoader(classLoader: ClassLoader): Unit = {
-    lock.synchronized{
-      val securityManager: SecurityManager = System.getSecurityManager
-      if(securityManager != null)
-        securityManager.checkPermission(RuntimePermissionCollection.SET_CONTEXT_CLASS_LOADER_PERSMISSION)
-      contextClassLoader = classLoader
-    }
-  }
+  def setContextClassLoader(classLoader: ClassLoader): Unit =
+    lock.synchronized(contextClassLoader = classLoader)
 
   final def setDaemon(daemon: scala.Boolean): Unit = {
     lock.synchronized{
@@ -412,12 +388,6 @@ class Thread extends Runnable {
 
   @deprecated
   final def stop(throwable: Throwable): Unit = {
-    val securityManager: SecurityManager = System.getSecurityManager
-    if(securityManager != null) {
-      securityManager.checkAccess(this)
-      if(Thread.currentThread() != this || !throwable.isInstanceOf[ThreadDeath])
-        securityManager.checkPermission(RuntimePermissionCollection.STOP_THREAD_PERMISSION)
-    }
     if(throwable == null)
       throw new NullPointerException("The argument is null!")
     lock.synchronized{
@@ -449,12 +419,8 @@ class Thread extends Runnable {
     getThreadGroup
   }
 
-  def setUncaughtExceptionHandler(eh: UncaughtExceptionHandler): Unit = {
-    val sm: SecurityManager = System.getSecurityManager
-    if(sm != null)
-      sm.checkPermission(RuntimePermissionCollection.MODIFY_THREAD_PERMISSION)
+  def setUncaughtExceptionHandler(eh: UncaughtExceptionHandler): Unit =
     exceptionHandler = eh
-  }
 
   private def checkGCWatermark(): Unit = {
     currentGCWatermarkCount += 1
@@ -475,12 +441,6 @@ class Thread extends Runnable {
     this.name
 
   def getStackTrace: Array[StackTraceElement] = {
-    if(Thread.currentThread != this) {
-      val securityManager: SecurityManager = System.getSecurityManager
-      if(securityManager != null) {
-        securityManager.checkPermission(RuntimePermissionCollection.GET_STACK_TRACE_PERMISSION)
-      }
-    }
     val ste: Array[StackTraceElement] = VMStack.getStackTrace(this)
     if(ste != null) ste else new Array[StackTraceElement](0)
   }
@@ -493,12 +453,8 @@ class Thread extends Runnable {
     getThreadGroup
   }
 
-  def setUncaughtExceptionHandler(eh: UncaughtExceptionHandler): Unit = {
-    val sm: SecurityManager = System.getSecurityManager
-    if(sm != null)
-      sm.checkPermission(RuntimePermissionCollection.MODIFY_THREAD_PERMISSION)
+  def setUncaughtExceptionHandler(eh: UncaughtExceptionHandler): Unit =
     exceptionHandler = eh
-  }
 
   def setDaemon(daemon: scala.Boolean): Unit = {
     lock.synchronized{
@@ -598,12 +554,6 @@ object Thread extends Runnable {
   }
 
   def getAllStackTraces: java.util.Map[Thread, Array[StackTraceElement]] = {
-    val securityManager: SecurityManager = System.getSecurityManager
-    if(securityManager != null) {
-      securityManager.checkPermission(RuntimePermissionCollection.GET_STACK_TRACE_PERMISSION)
-      securityManager.checkPermission(RuntimePermissionCollection.MODIFY_THREAD_GROUP_PERMISSION)
-    }
-
     var parent: ThreadGroup = new ThreadGroup(currentThread().getThreadGroup, "Temporary")
     var newParent: ThreadGroup = parent.getParent
     parent.destroy
@@ -638,12 +588,8 @@ object Thread extends Runnable {
 
   def getDefaultUncaughtExceptionHandler: UncaughtExceptionHandler = defaultExceptionHandler
 
-  def setDefaultUncaughtHandler(eh: UncaughtExceptionHandler): Unit = {
-    val sm: SecurityManager = System.getSecurityManager
-    if(sm != null)
-      sm.checkPermission(RuntimePermissionCollection.SET_DEFAULT_UNCAUGHT_EXCEPTION_HANDLER_PERMISSION)
+  def setDefaultUncaughtHandler(eh: UncaughtExceptionHandler): Unit =
     defaultExceptionHandler = eh
-  }
 
   //synchronized
   private def getNextThreadId: scala.Long = {
