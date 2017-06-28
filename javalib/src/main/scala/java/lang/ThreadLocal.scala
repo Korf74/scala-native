@@ -1,12 +1,10 @@
 package java.lang
 
-import java.lang.ref.Reference
-
-import scala.ref.WeakReference
+import java.lang.ref.{Reference, WeakReference}
 
 class ThreadLocal[T] {
 
-  import ThreadLocal._
+  import java.lang.ThreadLocal._
 
   private final val reference: Reference[ThreadLocal[T]] =
     new WeakReference[ThreadLocal[T]](this)
@@ -17,19 +15,20 @@ class ThreadLocal[T] {
 
   @SuppressWarnings("unchecked")
   def get(): T = {
+    // Optimized for the fast path
     val currentThread: Thread = Thread.currentThread()
-    var values: Values        = values(currentThread)
-    if (values != null) {
-      val table: Array[Object] = values.table
-      val index: Int           = hash & values.mask
+    var vals: Values        = values(currentThread)
+    if (vals != null) {
+      val table: Array[Object] = vals.table
+      val index: Int           = hash & vals.mask
       if (this.reference == table(index)) {
         table(index + 1).asInstanceOf[T]
       }
     } else {
-      values = initializeValues(currentThread)
+      vals = initializeValues(currentThread)
     }
 
-    values.getAfterMiss(this)
+    vals.getAfterMiss(this)
   }
 
   def set(o: T): Unit = {
@@ -91,34 +90,40 @@ object ThreadLocal {
 
     @SuppressWarnings("unchecked")
     private def inheritValues(fromParent: Values): Unit = {
-      val table: Array[Object] = table
-      var i: Int               = table.length
+      val table: Array[Object] = this.table
+      var i: Int               = this.table.length
+      var continue: scala.Boolean = false
       while (i >= 0) {
         val k: Object = table(i)
 
         if (k == null || k == TOMBSTONE) {
-          continue
+          continue = true
         }
 
-        val reference: Reference[InheritableThreadLocal[_]] =
-          k.asInstanceOf[Reference[InheritableThreadLocal[_]]]
+        if(!continue) {
+          val reference: Reference[InheritableThreadLocal[_]] =
+            k.asInstanceOf[Reference[InheritableThreadLocal[_]]]
 
-        val key: InheritableThreadLocal[_] = reference.get()
-        if (key != null) {
-          table(i + 1) = key.childValue(fromParent.table(i + 1))
-        } else {
-          table(i) = TOMBSTONE
-          table(i + 1) = null
-          fromParent.table(i) = TOMBSTONE
-          fromParent.table(i + 1) = null
+          val key: InheritableThreadLocal[_] = reference.get()
+          if (key != null) {
+            // Replace value with filtered value
+            // We should just let exceptions bubble out and tank
+            // the thread creation
+            table(i + 1) = key.childValue(fromParent.table(i + 1))
+          } else {
+            table(i) = TOMBSTONE
+            table(i + 1) = null
+            fromParent.table(i) = TOMBSTONE
+            fromParent.table(i + 1) = null
 
-          tombstones += 1
-          fromParent.tombstones += 1
+            tombstones += 1
+            fromParent.tombstones += 1
 
-          size -= 1
-          fromParent.size -= 1
+            size -= 1
+            fromParent.size -= 1
 
-          i -= 2
+            i -= 2
+          }
         }
       }
     }
@@ -131,7 +136,7 @@ object ThreadLocal {
     }
 
     private def cleanUp(): Unit = {
-      if (rehash) return
+      if (rehash()) return
       if (size == 0) return
 
       var index: Int           = clean
@@ -204,7 +209,7 @@ object ThreadLocal {
       true
     }
 
-    def add(key: ThreadLocal[_], value: Object) = {
+    def add(key: ThreadLocal[_], value: Object): Unit = {
       var index: Int = key.hash & mask
       while (true) {
         val k: Object = table(index)
@@ -218,7 +223,7 @@ object ThreadLocal {
       }
     }
 
-    def put(key: ThreadLocal[_], value: Object) = {
+    def put(key: ThreadLocal[_], value: Object): Unit = {
       cleanUp()
 
       var firstTombstone: Int = -1
@@ -253,26 +258,31 @@ object ThreadLocal {
       }
     }
 
-    def getAfterMiss(key: ThreadLocal[_]) = {
+    def getAfterMiss(key: ThreadLocal[_]): Object = {
       val table: Array[Object] = table
-      var index: Int           = key.hash && mask
+      var index: Int           = key.hash & mask
 
+      // If the first slot is empty, the search is over
       if (table(index) == null) {
         val value: Object = key.initialValue()
 
+        // If the table is still the same and the slot is still empty...
         if (this.table == table && table(index) == null) {
           table(index) = key.reference
           table(index + 1) = value
           size += 1
 
           cleanUp()
-          value
+          return value
         }
 
+        // The table changed during initialValue().
         put(key, value)
-        value
+        return value
       }
 
+      // Keep track of first tombstone. That's where we want to go back
+      // and add an entry if necessary
       var firstTombstone: Int = -1
 
       var index = next(index)
@@ -280,19 +290,26 @@ object ThreadLocal {
         val reference: Object = table(index)
         if (reference == key.reference) table(index + 1)
 
+        // If no entry was found...
         if (reference == null) {
           val value: Object = key.initialValue()
 
+          // If the table is still the same
           if (this.table == table) {
+            // If we passed a tombstone and that slot still
+            // contains a tombstone
             if (firstTombstone > -1 && table(firstTombstone) == TOMBSTONE) {
               table(firstTombstone) = key.reference
               table(firstTombstone + 1) = value
               tombstones -= 1
               size += 1
 
-              value
+              // No need to clean up here. We aren't filling
+              // in a null slot
+              return value
             }
 
+            // If this slot is still empy...
             if (table(index) == null) {
               table(index) = key.reference
               table(index + 1) = value
@@ -303,11 +320,13 @@ object ThreadLocal {
             }
           }
 
+          // The table changed during initialValue().
           put(key, value)
-          value
+          return value
         }
 
         if (firstTombstone == -1 && reference == TOMBSTONE)
+          // Keep track of this tombstone so we can overwrite it.
           firstTombstone = index
 
         index = next(index)

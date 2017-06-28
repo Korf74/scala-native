@@ -6,9 +6,17 @@ import java.util
 import security.fortress.SecurityUtils
 import vm.VMStack
 
+import scala.scalanative.native.{CFunctionPtr, CInt, Ptr, stackalloc}
+import scala.scalanative.posix.sys.types.{pthread_attr_t, pthread_t}
+import scala.scalanative.posix.pthread._
+import scala.scalanative.posix.sched._
+
 class Thread extends Runnable {
 
-  import Thread._
+  import java.lang.Thread._
+
+  current = new ThreadLocal[Thread]()
+  current.set(this)
 
   private var interruptedState   = false
   private[this] var name: String = "main" // default name of the main thread
@@ -25,13 +33,15 @@ class Thread extends Runnable {
 
   var started: scala.Boolean = false
 
-  var isAlive: scala.Boolean = false
+  var alive: scala.Boolean = false
 
   private var target: Runnable = _
 
   private var exceptionHandler: UncaughtExceptionHandler = _
 
   private var threadId: scala.Long = _
+
+  private var underlying: Option[pthread_t] = None
 
   val lock: Object = new Object()
 
@@ -78,7 +88,7 @@ class Thread extends Runnable {
     this.contextClassLoader = contextLoader
     this.target = null
     // The thread is actually running
-    this.isAlive = true
+    this.alive = true
     this.started = true
 
     val newRef: ThreadWeakRef = new ThreadWeakRef(this)
@@ -116,7 +126,7 @@ class Thread extends Runnable {
     this.target = target
     this.stackSize = stacksize
     this.priority = currentThread.priority
-    this.threadId = getNextThreadId()
+    this.threadId = getNextThreadId
     // throws NullPointerException if the guven name is null
     this.name = if(name != THREAD) name.toString else THREAD + threadId
 
@@ -147,8 +157,10 @@ class Thread extends Runnable {
       securityManager.checkAccess(this)
   }
 
+  @deprecated
   def countStackFrames: Int = 0 //deprecated
 
+  @deprecated
   def destroy(): Unit =
     // this method is not implemented
     throw new NoSuchMethodError()
@@ -188,7 +200,7 @@ class Thread extends Runnable {
   final def getPriority: Int = priority
 
   def getStackTrace: Array[StackTraceElement] = {
-    if(currentThread() != this) {
+    if(Thread.currentThread() != this) {
       val securityManager: SecurityManager = System.getSecurityManager
       if(securityManager != null) {
         securityManager.checkPermission(RuntimePermissionCollection.GET_STACK_TRACE_PERMISSION)
@@ -202,29 +214,34 @@ class Thread extends Runnable {
 
   def getId: scala.Long = threadId
 
+  def getPthreadId: pthread_t = {
+    if(started && underlying.isDefined)
+      underlying.get
+    else throw new NullPointerException("Thread isn't started yet")
+  }
+
   def interrupt(): Unit = {
     lock.synchronized{
       checkAccess()
-      val status: Int = VMThreadManager.interrupt(this)
-      if(status != VMThreadManager.TM_ERROR_NONE)
-        throw new InternalError("Thread Manager internal error " + status)
+      val status: Int = if(underlying.isDefined) pthread_cancel(underlying.get) else 0
+      current = null
+      if(status != 0)
+        throw new InternalError("Pthread error " + status)
     }
   }
 
-  final def isAlive(): scala.Boolean = {
-    lock.synchronized{
-      this.isAlive
-    }
-  }
+  final def isAlive: scala.Boolean = lock.synchronized(alive)
 
   final def isDaemon: scala.Boolean = daemon
 
-  def isInterrupted: scala.Boolean = VMThreadManager.isInterrupted(this)
+  // TODO check
+  def isInterrupted: scala.Boolean = interruptedState
 
   //synchronized
   final def join(): Unit = {
-    while(isAlive())
+    while(isAlive)
       wait()
+    current = null
   }
 
   // synchronized
@@ -235,12 +252,13 @@ class Thread extends Runnable {
     else {
       val end: scala.Long = System.currentTimeMillis() + millis
       var continue: scala.Boolean = true
-      while(isAlive() && continue) {
+      while(isAlive && continue) {
         wait(millis)
         millis = end - System.currentTimeMillis()
         if(millis <= 0)
           continue = false
       }
+      current = null
     }
   }
 
@@ -256,7 +274,7 @@ class Thread extends Runnable {
       val end: scala.Long = System.nanoTime() + 1000000 * millis + nanos.toLong
       var rest: scala.Long = 0L
       var continue: scala.Boolean = true
-      while(isAlive() && continue) {
+      while(isAlive && continue) {
         wait(millis, nanos)
         rest = end - System.nanoTime()
         if(rest <= 0)
@@ -266,26 +284,29 @@ class Thread extends Runnable {
           millis = rest / 1000000
         }
       }
+      current = null
     }
   }
 
+  @deprecated
   final def resume(): Unit = {
-    checkAccess()
+    /*checkAccess()
     val status: Int = VMThreadManager.resume(this)
     if(status != VMThreadManager.TM_ERROR_NONE)
-      throw new InternalError("Thread Manager internal error " + status)
+      throw new InternalError("Thread Manager internal error " + status)*/
+  }
+
+  private def toCRoutine(f: () => Unit): (Ptr[scala.Byte]) => Ptr[scala.Byte] = {
+    def g(ptr: Ptr[scala.Byte]) = {
+      f()
+      null.asInstanceOf[Ptr[scala.Byte]]
+    }
+    g
   }
 
   def run(): Unit = {
-    if(target != null)
+    if(target != null) {
       target.run()
-  }
-
-  def runImpl(): Unit = {
-    lock.synchronized{
-      isAlive = true
-      started = true
-      lock.notifyAll()
     }
   }
 
@@ -301,7 +322,7 @@ class Thread extends Runnable {
   final def setDaemon(daemon: scala.Boolean): Unit = {
     lock.synchronized{
       checkAccess()
-      if(isAlive())
+      if(isAlive)
         throw new IllegalThreadStateException()
       this.daemon = daemon
     }
@@ -315,14 +336,16 @@ class Thread extends Runnable {
 
   final def setPriority(priority: Int): Unit = {
     checkAccess()
-    if(priority > MAX_PRIORITY || priority < MIN_PRIORITY)
+    if(priority > Thread.MAX_PRIORITY || priority < Thread.MIN_PRIORITY)
       throw new IllegalArgumentException("Wrong Thread priority value")
     val threadGroup: ThreadGroup = group
     this.priority = if(priority > threadGroup.maxPriority) threadGroup.maxPriority else priority
-    val status: Int = VMThreadManager.setPriority(this, this.priority)
-    if(status != VMThreadManager.TM_ERROR_NONE) {
-      //throw new InternalError("Thread Manager internal error " + status)
-      // TODO Why is this commented ?
+    if(underlying.isDefined) {
+      val param: Ptr[sched_param] = stackalloc[sched_param]
+      val policy: Ptr[CInt] = stackalloc[CInt]
+      pthread_getschedparam(underlying.get, policy, param)
+      !param._1 = priority
+      pthread_setschedparam(underlying.get, !policy, param)
     }
   }
 
@@ -335,47 +358,31 @@ class Thread extends Runnable {
       // adding the thread to the thread group
       group.add(this)
 
-      if(VMThreadManager.start(this, stackSize, daemon, priority) != 0)
-        throw new OutOfMemoryError("Failed to create new thread")
+      val id = stackalloc[pthread_t]
+      val status = pthread_create(id, null.asInstanceOf[Ptr[pthread_attr_t]],
+        CFunctionPtr.fromFunction1[Ptr[scala.Byte], Ptr[scala.Byte]](
+          toCRoutine(run)), null.asInstanceOf[Ptr[scala.Byte]])
+      if(status != 0)
+        throw new Exception("Failed to create new thread, pthread error " + status)
 
-
-      // wjw -- why are we *waiting* for a child thread to actually start running?
-      // this *guarantees* two context switches
-      // nothing in j.l.Thread spec says we have to do this
-      // my guess is that this actually masks an underlying race condition that we need to fix.
-      var interrupted: scala.Boolean = false
-      while(!this.started) {
-        try {
-          lock.wait()
-        } catch {
-          case e: InterruptedException => interrupted = true
-        }
-      }
-
-      if(interrupted) Thread.currentThread().interrupt()
+      started = true
 
     }
   }
 
-  def detach(uncaughtException: Throwable): Unit = {
-    try {
-      if(uncaughtException != null)
-        getUncaughtExceptionHandler().uncaughtException(this, uncaughtException)
-    } finally {
-      group.remove(this)
-      this.synchronized{
-        isAlive = false
-        notifyAll()
-      }
-    }
-  }
+  type State = CInt
 
-  // TODO ENUMERATION
+  final val NEW: State = 0
+  final val RUNNABLE: State = 1
+  final val BLOCKED: State = 2
+  final val WAITING: State = 3
+  final val TIMED_WAITING: State = 4
+  final val TERMINATED: State = 5
 
-  def getState: Thread.State = {
+  def getState: State = {
     var dead: scala.Boolean = false
     lock.synchronized{
-      if(started && !isAlive()) dead = true
+      if(started && !isAlive) dead = true
     }
     if(dead) return State.TERMINATED
 
@@ -398,23 +405,23 @@ class Thread extends Runnable {
   @deprecated
   final def stop(): Unit = {
     lock.synchronized{
-      if(isAlive())
+      if(isAlive)
         stop(new ThreadDeath())
     }
   }
 
   @deprecated
-  final def stop(throwable: Throwable) = {
+  final def stop(throwable: Throwable): Unit = {
     val securityManager: SecurityManager = System.getSecurityManager
     if(securityManager != null) {
       securityManager.checkAccess(this)
-      if(currentThread() != this || !throwable.isInstanceOf[ThreadDeath])
+      if(Thread.currentThread() != this || !throwable.isInstanceOf[ThreadDeath])
         securityManager.checkPermission(RuntimePermissionCollection.STOP_THREAD_PERMISSION)
     }
     if(throwable == null)
       throw new NullPointerException("The argument is null!")
     lock.synchronized{
-      if(isAlive()) {
+      if(isAlive) {
         val status: Int = VMThreadManager.stop(this, throwable)
         if(status != VMThreadManager.TM_ERROR_NONE)
           throw new InternalError("Thread Manager internal error " + status)
@@ -467,16 +474,40 @@ class Thread extends Runnable {
   final def getName: String =
     this.name
 
-  def getStackTrace: Array[StackTraceElement] = ???
+  def getStackTrace: Array[StackTraceElement] = {
+    if(Thread.currentThread != this) {
+      val securityManager: SecurityManager = System.getSecurityManager
+      if(securityManager != null) {
+        securityManager.checkPermission(RuntimePermissionCollection.GET_STACK_TRACE_PERMISSION)
+      }
+    }
+    val ste: Array[StackTraceElement] = VMStack.getStackTrace(this)
+    if(ste != null) ste else new Array[StackTraceElement](0)
+  }
 
-  def getId: scala.Long = 1
+  def getId: scala.Long = threadId
 
-  def getUncaughtExceptionHandler: UncaughtExceptionHandler = ???
+  def getUncaughtExceptionHandler: UncaughtExceptionHandler = {
+    if(exceptionHandler != null)
+      return exceptionHandler
+    getThreadGroup
+  }
 
-  def setUncaughtExceptionHandler(handler: UncaughtExceptionHandler): Unit =
-    ???
+  def setUncaughtExceptionHandler(eh: UncaughtExceptionHandler): Unit = {
+    val sm: SecurityManager = System.getSecurityManager
+    if(sm != null)
+      sm.checkPermission(RuntimePermissionCollection.MODIFY_THREAD_PERMISSION)
+    exceptionHandler = eh
+  }
 
-  def setDaemon(on: scala.Boolean): Unit = ???
+  def setDaemon(daemon: scala.Boolean): Unit = {
+    lock.synchronized{
+      checkAccess()
+      if(isAlive)
+        throw new IllegalThreadStateException()
+      this.daemon = daemon
+    }
+  }
 
   trait UncaughtExceptionHandler {
     def uncaughtException(thread: Thread, e: Throwable): Unit
@@ -485,13 +516,36 @@ class Thread extends Runnable {
 
 object Thread extends Runnable {
 
-  final val MAX_PRIORITY: Int = 10
+  private final val PTHREAD_DEFAULT_ATTR: Ptr[pthread_attr_t] = {
+    val attr = stackalloc[pthread_attr_t]
+    pthread_attr_init(attr)
+    attr
+  }
 
-  final val MIN_PRIORITY: Int = 1
+  private final val PTHREAD_DEFAULT_SCHED_PARAM = {
+    val param: Ptr[sched_param] = stackalloc[sched_param]
+    pthread_attr_getschedparam(PTHREAD_DEFAULT_ATTR, param)
+    param
+  }
 
-  final val NORM_PRIORITY: Int = 5
+  private final val PTHREAD_DEFAULT_POLICY = {
+    val policy = stackalloc[CInt]
+    pthread_attr_getschedpolicy(PTHREAD_DEFAULT_ATTR, policy)
+  }
+
+  final val MAX_PRIORITY: Int = {
+    sched_get_priority_max(PTHREAD_DEFAULT_POLICY)
+  }
+
+  final val MIN_PRIORITY: Int = {
+    sched_get_priority_min(PTHREAD_DEFAULT_POLICY)
+  }
+
+  final val NORM_PRIORITY: Int = !PTHREAD_DEFAULT_SCHED_PARAM._1
 
   final val STACK_TRACE_INDENT: String = "    "
+
+  private var current: ThreadLocal[Thread] = _
 
   private val MainRunnable = new Runnable { def run(): Unit = () }
   private val MainThread   = new Thread(MainRunnable)
@@ -512,7 +566,7 @@ object Thread extends Runnable {
 
   def activeCount: Int = currentThread().group.activeCount()
 
-  def currentThread(): Thread = VMTHreadManager.currentThread
+  def currentThread(): Thread = current.get()
 
   def dumpStack: Unit = {
     val stack: Array[StackTraceElement] = new Throwable().getStackTrace
@@ -526,34 +580,24 @@ object Thread extends Runnable {
 
   def enumerate(list: Array[Thread]): Int = currentThread().group.enumerate(list)
 
-  def holdsLock(obj: Object): Boolean = {
+  def holdsLock(obj: Object): scala.Boolean = {
     if(obj == null)
       throw new NullPointerException()
     VMThreadManager.holdsLock(obj)
   }
 
-  def interrupted: Boolean = VMThreadManager.isInterrupted
+  def interrupted: scala.Boolean = currentThread().isInterrupted
 
-  def sleep(millis: Long) = sleep(millis, 0)
-
-  def sleep(millis: Long, nanos: Int) = {
-    if(millis < 0 || nanos < 0 || nanos > 999999)
-      throw new IllegalArgumentException("Arguments don't match the expected range!")
-    val status: Int = VMTHreadManager.sleep(millis, nanos)
-    if(status == VMThreadManager.TM_ERROR_INTERRUPT)
-      throw new InterruptedException()
-    else if(status != VMThreadManager.TM_ERROR_NONE)
-      throw new InternalError("Thread Manager internal error " + status)
-  }
-
-  // TODO correct name ?
-  def _yield: Unit = {
+  def `yield`(): Unit = {
+    //TODO I'm not sur what to do with this
+    /*
     val status: Int = VMThreadManager._yield()
     if(status != VMThreadManager.TM_ERROR_NONE)
       throw new InternalError("Thread Manager internal error " + status)
+      */
   }
 
-  def getAllStackTraces(): java.util.Map[Thread, Array[StackTraceElement]] = {
+  def getAllStackTraces: java.util.Map[Thread, Array[StackTraceElement]] = {
     val securityManager: SecurityManager = System.getSecurityManager
     if(securityManager != null) {
       securityManager.checkPermission(RuntimePermissionCollection.GET_STACK_TRACE_PERMISSION)
@@ -569,14 +613,15 @@ object Thread extends Runnable {
     }
     var threadsCount: Int = parent.activeCount() + 1
     var count: Int = 0
-    var liveThreads: Array[Thread] = _
-    while(true) {
+    var liveThreads: Array[Thread] = Array.empty
+    var break: scala.Boolean = false
+    while(!break) {
       liveThreads = new Array[Thread](threadsCount)
       count = parent.enumerate(liveThreads)
       if(count == threadsCount) {
         threadsCount *= 2
       } else
-        break
+        break = true
     }
 
     val map: java.util.Map[Thread, Array[StackTraceElement]] = new util.HashMap[Thread, Array[StackTraceElement]](count + 1)
@@ -607,8 +652,8 @@ object Thread extends Runnable {
   }
 
   def interrupted(): scala.Boolean = {
-    val ret = currentThread.isInterrupted
-    currentThread.interruptedState = false
+    val ret = currentThread().isInterrupted
+    currentThread().interruptedState = false
     ret
   }
 
