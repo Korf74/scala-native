@@ -1,8 +1,12 @@
 package java.lang
 
 import java.util
+import java.lang.Thread.UncaughtExceptionHandler
+import scala.collection.JavaConversions._
 
-class ThreadGroup extends Thread.UncaughtExceptionHandler {
+// Ported from Harmony
+
+class ThreadGroup extends UncaughtExceptionHandler {
 
   import ThreadGroup._
 
@@ -20,8 +24,6 @@ class ThreadGroup extends Thread.UncaughtExceptionHandler {
 
   private val threads: util.LinkedList[Thread] = new util.LinkedList[Thread]()
 
-  def this(name: String) = this(Thread.currentThread.group, name)
-
   def this(parent: ThreadGroup, name: String) = {
     this()
     if (parent == null) {
@@ -37,6 +39,8 @@ class ThreadGroup extends Thread.UncaughtExceptionHandler {
     parent.add(this)
   }
 
+  def this(name: String) = this(Thread.currentThread.group, name)
+
   def activeCount(): Int = {
     var count: Int                    = 0
     var groupsCopy: util.List[ThreadGroup] = null
@@ -47,9 +51,9 @@ class ThreadGroup extends Thread.UncaughtExceptionHandler {
       groupsCopy = groups.clone().asInstanceOf[util.List[ThreadGroup]]
     }
 
-    count += threadsCopy.asScala.count(_.isAlive)
+    count += threadsCopy.toList.count(_.isAlive)
 
-    groupsCopy.asScala.foldLeft(count)((c, group) => c + group.activeCount())
+    groupsCopy.toList.foldLeft(count)((c, group) => c + group.activeCount())
 
     count
   }
@@ -63,7 +67,7 @@ class ThreadGroup extends Thread.UncaughtExceptionHandler {
       groupsCopy = groups.clone().asInstanceOf[util.List[ThreadGroup]]
     }
 
-    groupsCopy.asScala.foldLeft(count)((c, group) => c + group.activeGroupCount())
+    groupsCopy.toList.foldLeft(count)((c, group) => c + group.activeGroupCount())
 
     count
   }
@@ -224,7 +228,7 @@ class ThreadGroup extends Thread.UncaughtExceptionHandler {
         // destroy this group
         if(parent != null) {
           parent.remove(this)
-          destroyed = null
+          destroyed = true
         }
       }
     }
@@ -239,7 +243,7 @@ class ThreadGroup extends Thread.UncaughtExceptionHandler {
     }
   }
 
-  @SuppressWarnings("unused")
+  @SuppressWarnings(Array("unused"))
   private def getActiveChildren: Array[Object] = {
     val threadsCopy: util.ArrayList[Thread] =
       new util.ArrayList[Thread](threads.size)
@@ -248,7 +252,7 @@ class ThreadGroup extends Thread.UncaughtExceptionHandler {
 
     lock.synchronized {
       if (destroyed)
-        return new Array[Object](2)(null, null)
+        return Array[Object](null, null)
       for(thread: Thread <- threads) {
         threadsCopy.add(thread)
       }
@@ -266,7 +270,7 @@ class ThreadGroup extends Thread.UncaughtExceptionHandler {
         activeThreads.add(thread)
     }
 
-    new Array[Object](2)(activeThreads.toArray(), groupsCopy.toArray())
+    Array[Object](activeThreads.toArray(), groupsCopy.toArray())
 
   }
 
@@ -284,7 +288,7 @@ class ThreadGroup extends Thread.UncaughtExceptionHandler {
       if(recurse)
         groupsCopy = groups.clone().asInstanceOf[util.List[ThreadGroup]]
     }
-    for(thread: Object <- threadsCopy) {
+    for(thread: Object <- threadsCopy.toList) {
       if(thread.asInstanceOf[Thread].isAlive) {
         list(offset) = thread.asInstanceOf[Thread]
         offset += 1
@@ -307,7 +311,7 @@ class ThreadGroup extends Thread.UncaughtExceptionHandler {
       return offset
     val firstGroupIdx: Int = offset
     lock.synchronized{
-      for(group: Object <- groups) {
+      for(group: Object <- groups.toList) {
         list(offset) = group.asInstanceOf[ThreadGroup]
         offset += 1
         if(offset == list.length)
@@ -335,11 +339,11 @@ class ThreadGroup extends Thread.UncaughtExceptionHandler {
       threadsCopy = threads.clone().asInstanceOf[util.List[Thread]]
       groupsCopy = groups.clone().asInstanceOf[util.List[ThreadGroup]]
     }
-    for(thread: Object <- threadsCopy) println(prefix + thread.asInstanceOf[Thread])
-    for(group: Object <- groupsCopy) group.asInstanceOf[ThreadGroup].list(prefix)
+    for(thread: Object <- threadsCopy.toList) println(prefix + thread.asInstanceOf[Thread])
+    for(group: Object <- groupsCopy.toList) group.asInstanceOf[ThreadGroup].list(prefix)
   }
 
-  private def nonsecureDestroy(): Unit = {
+  def nonsecureDestroy(): Unit = {
     var groupsCopy: util.List[ThreadGroup] = null
 
     lock.synchronized{
@@ -352,20 +356,20 @@ class ThreadGroup extends Thread.UncaughtExceptionHandler {
     if(parent != null)
       parent.remove(this)
 
-    for(group: Object <- groupsCopy) group.asInstanceOf[ThreadGroup].nonSecureDestroys
+    for(group: Object <- groupsCopy.toList) group.asInstanceOf[ThreadGroup].nonsecureDestroy()
   }
 
   private def nonsecureInterrupt(): Unit = {
     lock.synchronized{
-      for(thread: Object <- threads) thread.asInstanceOf[Thread].interrupt()
-      for(group: Object <- groups) group.asInstanceOf[ThreadGroup].nonSecureInterrupt
+      for(thread: Object <- threads.toList) thread.asInstanceOf[Thread].interrupt()
+      for(group: Object <- groups.toList) group.asInstanceOf[ThreadGroup].nonsecureInterrupt
     }
   }
 
   private def nonsecureResume(): Unit = {
     lock.synchronized{
-      for(thread: Object <- threads) thread.asInstanceOf[Thread].resume()
-      for(group: Object <- groups) group.asInstanceOf[ThreadGroup].nonSecureResume
+      for(thread: Object <- threads.toList) thread.asInstanceOf[Thread].resume()
+      for(group: Object <- groups.toList) group.asInstanceOf[ThreadGroup].nonsecureResume
     }
   }
 
@@ -373,21 +377,21 @@ class ThreadGroup extends Thread.UncaughtExceptionHandler {
     lock.synchronized{
       this.maxPriority = priority
 
-      for(group: Object <- groups) group.asInstanceOf[ThreadGroup].nonSecureSetMaxPriority(priority)
+      for(group: Object <- groups.toList) group.asInstanceOf[ThreadGroup].nonsecureSetMaxPriority(priority)
     }
   }
 
   private def nonsecureStop(): Unit = {
     lock.synchronized{
-      for(thread: Object <- threads) thread.asInstanceOf[Thread].stop()
-      for(group: Object <- groups) group.asInstanceOf[ThreadGroup].nonSecureStop
+      for(thread: Object <- threads.toList) thread.asInstanceOf[Thread].stop()
+      for(group: Object <- groups.toList) group.asInstanceOf[ThreadGroup].nonsecureStop
     }
   }
 
   private def nonsecureSuspend(): Unit = {
     lock.synchronized{
       for(thread: Object <- threads) thread.asInstanceOf[Thread].suspend()
-      for(group: Object <- groups) group.asInstanceOf[ThreadGroup].nonSecureSuspend
+      for(group: Object <- groups) group.asInstanceOf[ThreadGroup].nonsecureSuspend
     }
   }
 

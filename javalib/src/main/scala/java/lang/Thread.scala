@@ -1,19 +1,18 @@
 package java.lang
 
-import java.security.AccessController
 import java.util
-
-import security.fortress.SecurityUtils
-import vm.VMStack
+import java.lang.Thread._
 
 import scala.scalanative.native.{CFunctionPtr, CInt, Ptr, stackalloc}
 import scala.scalanative.posix.sys.types.{pthread_attr_t, pthread_t}
 import scala.scalanative.posix.pthread._
 import scala.scalanative.posix.sched._
 
+// Ported from Harmony
+
 class Thread extends Runnable {
 
-  import java.lang.Thread._
+  //import java.lang.Thread._
 
   current = new ThreadLocal[Thread]()
   current.set(this)
@@ -37,7 +36,7 @@ class Thread extends Runnable {
 
   private var target: Runnable = _
 
-  private var exceptionHandler: UncaughtExceptionHandler = _
+  private var exceptionHandler: Thread.UncaughtExceptionHandler = _
 
   private var threadId: scala.Long = _
 
@@ -48,6 +47,36 @@ class Thread extends Runnable {
   var localValues: ThreadLocal.Values = _
 
   var inheritableValues: ThreadLocal.Values = _
+
+  def this(group: ThreadGroup, target: Runnable, name: String, stacksize: scala.Long) = {
+    this()
+    val currentThread: Thread = currentThread
+
+    var threadGroup: ThreadGroup = null
+    if(group != null) {
+      threadGroup = group
+    } else if(threadGroup == null)
+      threadGroup = currentThread.group
+
+    threadGroup.checkGroup()
+
+    this.group = threadGroup
+    this.daemon = currentThread.daemon
+    this.contextClassLoader = currentThread.contextClassLoader
+    this.target = target
+    this.stackSize = stacksize
+    this.priority = currentThread.priority
+    this.threadId = getNextThreadId
+    // throws NullPointerException if the given name is null
+    this.name = if(name != THREAD) name.toString else THREAD + threadId
+
+    checkGCWatermark()
+    checkAccess()
+
+    val parent: Thread = currentThread
+    if(parent != null && parent.inheritableValues != null)
+      inheritableValues = new ThreadLocal.Values(parent.inheritableValues)
+  }
 
   def this(target: Runnable) = this(null, target, THREAD, 0)
 
@@ -61,6 +90,7 @@ class Thread extends Runnable {
 
   def this(gp: ThreadGroup, name: String, nativeAddr: scala.Long, stackSize: scala.Long,
            priority: Int, daemon: scala.Boolean) = {
+    this()
     val contextLoader: ClassLoader = null
 
     var group: ThreadGroup = gp
@@ -91,10 +121,6 @@ class Thread extends Runnable {
     this.alive = true
     this.started = true
 
-    val newRef: ThreadWeakRef = new ThreadWeakRef(this)
-    newRef.setNativeAddr(nativeAddr)
-
-    SecurityUtils.putContext(this, AccessController.getContext)
     // adding the thread to the thread group should be the last action
     group.add(this)
 
@@ -102,48 +128,6 @@ class Thread extends Runnable {
     if(parent != null && parent.inheritableValues != null) {
       inheritableValues = new ThreadLocal.Values(parent.inheritableValues)
     }
-  }
-
-  def this(group: ThreadGroup, target: Runnable, name: String, stacksize: scala.Long) = {
-    val currentThread: Thread = VMThreadManager.currentThread
-
-    var threadGroup: ThreadGroup = null
-    if(group != null) {
-      threadGroup = group
-    } else if(securityManager != null)
-      threadGroup = securityManager.getThreadGroup
-    if(threadGroup == null)
-      threadGroup = currentThread.group
-
-    threadGroup.checkGroup()
-
-    this.group = threadGroup
-    this.daemon = currentThread.daemon
-    this.contextClassLoader = currentThread.contextClassLoader
-    this.target = target
-    this.stackSize = stacksize
-    this.priority = currentThread.priority
-    this.threadId = getNextThreadId
-    // throws NullPointerException if the guven name is null
-    this.name = if(name != THREAD) name.toString else THREAD + threadId
-
-    checkGCWatermark()
-
-    val oldRef: ThreadWeakRef = ThreadWeakRef.poll
-    val newRef: ThreadWeakRef = new ThreadWeakRef(this)
-
-    val oldPointer: scala.Long = if(oldRef == null) 0 else oldRef.getNativeAddr
-    val newPointer: scala.Long = VMThreadManager.init(this, newRef, oldPointer)
-    if(newPointer == 0)
-      throw new OutOfMemoryError("Failed to create new thread")
-    newRef.setNativeAddr(newPointer)
-
-    SecurityUtils.putContext(this, AccessController.getContext)
-    checkAccess()
-
-    val parent: Thread = currentThread
-    if(parent != null && parent.inheritableValues != null)
-      inheritableValues = new ThreadLocal.Values(parent.inheritableValues)
   }
 
   def this(group: ThreadGroup, name: String) = this(group, null, name, 0)
@@ -160,6 +144,7 @@ class Thread extends Runnable {
 
   def getContextClassLoader: ClassLoader = {
     lock.synchronized{
+      /*
       // First, if the conditions
       //    1) there is a security manager
       //    2) the caller's class loader is not null
@@ -179,6 +164,7 @@ class Thread extends Runnable {
           classLoader = classLoader.getParent
         }
       }
+      */
       contextClassLoader
     }
   }
@@ -187,9 +173,9 @@ class Thread extends Runnable {
 
   final def getPriority: Int = priority
 
-  def getStackTrace: Array[StackTraceElement] = {
+  def getStackTrace: Array[StackTraceElement] = {/*
     val ste: Array[StackTraceElement] = VMStack.getThreadStackTrace(this)
-    if(ste != null) ste else new Array[StackTraceElement](0)
+    if(ste != null) ste else */new Array[StackTraceElement](0)
   }
 
   final def getThreadGroup: ThreadGroup = group
@@ -342,6 +328,7 @@ class Thread extends Runnable {
         throw new Exception("Failed to create new thread, pthread error " + status)
 
       started = true
+      underlying = Some(!id)
 
     }
   }
@@ -356,11 +343,13 @@ class Thread extends Runnable {
   final val TERMINATED: State = 5
 
   def getState: State = {
+    RUNNABLE
+    /*
     var dead: scala.Boolean = false
     lock.synchronized{
       if(started && !isAlive) dead = true
     }
-    if(dead) return State.TERMINATED
+    if(dead) return TERMINATED
 
     val state = VMThreadManager.getState(this)
 
@@ -376,6 +365,7 @@ class Thread extends Runnable {
     // TM_THREAD_STATE_ALIVE test as it is.
     else if(0 != (state & VMThreadManager.TM_THREAD_STATE_ALIVE)) State.RUNNABLE
     else State.NEW
+    */
   }
 
   @deprecated
@@ -391,21 +381,23 @@ class Thread extends Runnable {
     if(throwable == null)
       throw new NullPointerException("The argument is null!")
     lock.synchronized{
-      if(isAlive) {
-        val status: Int = VMThreadManager.stop(this, throwable)
-        if(status != VMThreadManager.TM_ERROR_NONE)
-          throw new InternalError("Thread Manager internal error " + status)
+      if(isAlive && underlying.isDefined) {
+        val status: Int = pthread_cancel(underlying.get)
+        if(status != 0)
+          throw new InternalError("Pthread error " + status)
       }
     }
   }
 
   @deprecated
   final def suspend(): Unit = {
+    /*
     checkAccess()
 
     val status = VMThreadManager.suspend(this)
     if(status != VMThreadManager.TM_ERROR_NONE)
       throw new InternalError("Thread Manager internal error " + status)
+      */
   }
 
   override def toString: String = {
@@ -414,56 +406,20 @@ class Thread extends Runnable {
     "Thread[" + name + "," + priority + "," + s + "]"
   }
 
-  def getUncaughtExceptionHandler: UncaughtExceptionHandler = {
-    if(exceptionHandler != null) return exceptionHandler
-    getThreadGroup
-  }
-
-  def setUncaughtExceptionHandler(eh: UncaughtExceptionHandler): Unit =
-    exceptionHandler = eh
-
   private def checkGCWatermark(): Unit = {
     currentGCWatermarkCount += 1
     if(currentGCWatermarkCount % GC_WATERMARK_MAX_COUNT == 0)
       System.gc()
   }
 
-  def interrupt(): Unit =
-    interruptedState = true
-
-  def isInterrupted: scala.Boolean =
-    interruptedState
-
-  final def setName(name: String): Unit =
-    this.name = name
-
-  final def getName: String =
-    this.name
-
-  def getStackTrace: Array[StackTraceElement] = {
-    val ste: Array[StackTraceElement] = VMStack.getStackTrace(this)
-    if(ste != null) ste else new Array[StackTraceElement](0)
-  }
-
-  def getId: scala.Long = threadId
-
-  def getUncaughtExceptionHandler: UncaughtExceptionHandler = {
+  def getUncaughtExceptionHandler: Thread.UncaughtExceptionHandler = {
     if(exceptionHandler != null)
       return exceptionHandler
     getThreadGroup
   }
 
-  def setUncaughtExceptionHandler(eh: UncaughtExceptionHandler): Unit =
+  def setUncaughtExceptionHandler(eh: Thread.UncaughtExceptionHandler): Unit =
     exceptionHandler = eh
-
-  def setDaemon(daemon: scala.Boolean): Unit = {
-    lock.synchronized{
-      checkAccess()
-      if(isAlive)
-        throw new IllegalThreadStateException()
-      this.daemon = daemon
-    }
-  }
 
   trait UncaughtExceptionHandler {
     def uncaughtException(thread: Thread, e: Throwable): Unit
@@ -524,7 +480,7 @@ object Thread extends Runnable {
 
   def currentThread(): Thread = current.get()
 
-  def dumpStack: Unit = {
+  def dumpStack(): Unit = {
     val stack: Array[StackTraceElement] = new Throwable().getStackTrace
     System.err.println("Stack trace")
     var i: Int = 0
@@ -537,15 +493,17 @@ object Thread extends Runnable {
   def enumerate(list: Array[Thread]): Int = currentThread().group.enumerate(list)
 
   def holdsLock(obj: Object): scala.Boolean = {
+    false
+    // TODO
+    /*
     if(obj == null)
       throw new NullPointerException()
     VMThreadManager.holdsLock(obj)
+    */
   }
 
-  def interrupted: scala.Boolean = currentThread().isInterrupted
-
   def `yield`(): Unit = {
-    //TODO I'm not sur what to do with this
+    //TODO I'm not sure what to do with this
     /*
     val status: Int = VMThreadManager._yield()
     if(status != VMThreadManager.TM_ERROR_NONE)
@@ -556,7 +514,7 @@ object Thread extends Runnable {
   def getAllStackTraces: java.util.Map[Thread, Array[StackTraceElement]] = {
     var parent: ThreadGroup = new ThreadGroup(currentThread().getThreadGroup, "Temporary")
     var newParent: ThreadGroup = parent.getParent
-    parent.destroy
+    parent.destroy()
     while(newParent != null) {
       parent = newParent
       newParent = parent.getParent
@@ -630,12 +588,6 @@ object Thread extends Runnable {
 
   trait UncaughtExceptionHandler {
     def uncaughtException(t: Thread, e: Throwable)
-  }
-
-  trait UncaughtExceptionHandler {
-
-    def uncaughtException(t: Thread, e: Throwable)
-
   }
 
 }

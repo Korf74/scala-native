@@ -2,7 +2,9 @@ package java.lang
 
 import java.lang.ref.{Reference, WeakReference}
 
-class ThreadLocal[T] {
+// Ported from Harmony
+
+class ThreadLocal[T <: Object] {
 
   import java.lang.ThreadLocal._
 
@@ -13,14 +15,14 @@ class ThreadLocal[T] {
 
   protected def initialValue(): T = null.asInstanceOf[T]
 
-  @SuppressWarnings("unchecked")
+  @SuppressWarnings(Array("unchecked"))
   def get(): T = {
     // Optimized for the fast path
     val currentThread: Thread = Thread.currentThread()
     var vals: Values        = values(currentThread)
     if (vals != null) {
-      val table: Array[Object] = vals.table
-      val index: Int           = hash & vals.mask
+      val table: Array[Object] = vals.getTable
+      val index: Int           = hash & vals.getMask
       if (this.reference == table(index)) {
         table(index + 1).asInstanceOf[T]
       }
@@ -28,29 +30,29 @@ class ThreadLocal[T] {
       vals = initializeValues(currentThread)
     }
 
-    vals.getAfterMiss(this)
+    vals.getAfterMiss(this).asInstanceOf[T]
   }
 
-  def set(o: T): Unit = {
+  def set(value: T): Unit = {
     val currentThread: Thread = Thread.currentThread()
-    var values: Values        = values(currentThread)
-    if (values == null) {
-      values = initializeValues(currentThread)
+    var vals: Values        = values(currentThread)
+    if (vals == null) {
+      vals = initializeValues(currentThread)
     }
 
-    values.put(this, value)
+    vals.put(this, value.asInstanceOf[Object])
   }
 
   def remove(): Unit = {
     val currentThread: Thread = Thread.currentThread()
-    var values: Values        = values(currentThread)
-    if (values != null) {
-      values.remove(this)
+    var vals: Values        = values(currentThread)
+    if (vals != null) {
+      vals.remove(this)
     }
   }
 
   def initializeValues(current: Thread): Values =
-    current.localValues = new Values
+    current.localValues = new ThreadLocal.Values()
 
   def values(current: Thread): Values = current.localValues
 }
@@ -88,7 +90,11 @@ object ThreadLocal {
       inheritValues(fromParent)
     }
 
-    @SuppressWarnings("unchecked")
+    def getTable: Array[Object] = table
+
+    def getMask: Int = mask
+
+    @SuppressWarnings(Array("unchecked"))
     private def inheritValues(fromParent: Values): Unit = {
       val table: Array[Object] = this.table
       var i: Int               = this.table.length
@@ -258,7 +264,7 @@ object ThreadLocal {
       }
     }
 
-    def getAfterMiss(key: ThreadLocal[_]): Object = {
+    def getAfterMiss(key: ThreadLocal[_ <: Object]): Object = {
       val table: Array[Object] = table
       var index: Int           = key.hash & mask
 
@@ -285,7 +291,7 @@ object ThreadLocal {
       // and add an entry if necessary
       var firstTombstone: Int = -1
 
-      var index = next(index)
+      index = next(index)
       while (true) {
         val reference: Object = table(index)
         if (reference == key.reference) table(index + 1)
@@ -295,7 +301,7 @@ object ThreadLocal {
           val value: Object = key.initialValue()
 
           // If the table is still the same
-          if (this.table == table) {
+          if (this.table sameElements table) {
             // If we passed a tombstone and that slot still
             // contains a tombstone
             if (firstTombstone > -1 && table(firstTombstone) == TOMBSTONE) {
@@ -309,14 +315,14 @@ object ThreadLocal {
               return value
             }
 
-            // If this slot is still empy...
+            // If this slot is still empty...
             if (table(index) == null) {
               table(index) = key.reference
               table(index + 1) = value
               size += 1
 
               cleanUp()
-              value
+              return value
             }
           }
 
