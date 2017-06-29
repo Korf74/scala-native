@@ -1,4 +1,4 @@
-package java.lang.ref
+/*package java.lang.ref
 
 class ReferenceQueue[T >: Null <: AnyRef] extends Object {
 
@@ -39,4 +39,4 @@ class ReferenceQueue[T >: Null <: AnyRef] extends Object {
     true
   }
 
-}
+}*/

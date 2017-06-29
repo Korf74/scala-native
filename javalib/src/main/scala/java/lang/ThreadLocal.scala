@@ -1,10 +1,11 @@
 package java.lang
 
 import java.lang.ref.{Reference, WeakReference}
+import scala.scalanative.runtime.CAtomicInt
 
 // Ported from Harmony
 
-class ThreadLocal[T <: Object] {
+class ThreadLocal[T] {
 
   import java.lang.ThreadLocal._
 
@@ -51,8 +52,10 @@ class ThreadLocal[T <: Object] {
     }
   }
 
-  def initializeValues(current: Thread): Values =
+  def initializeValues(current: Thread): Values = {
     current.localValues = new ThreadLocal.Values()
+    current.localValues
+  }
 
   def values(current: Thread): Values = current.localValues
 }
@@ -107,15 +110,17 @@ object ThreadLocal {
         }
 
         if(!continue) {
-          val reference: Reference[InheritableThreadLocal[_]] =
-            k.asInstanceOf[Reference[InheritableThreadLocal[_]]]
+          val reference: Reference[InheritableThreadLocal[_ <: Object]] =
+            k.asInstanceOf[Reference[InheritableThreadLocal[_ <: Object]]]
 
-          val key: InheritableThreadLocal[_] = reference.get()
+          val key = reference.get()
           if (key != null) {
             // Replace value with filtered value
             // We should just let exceptions bubble out and tank
             // the thread creation
-            table(i + 1) = key.childValue(fromParent.table(i + 1))
+
+            // remi : TODO recheck
+            table(i + 1) = fromParent.table(i + 1)//key.childValue(fromParent.table(i + 1))
           } else {
             table(i) = TOMBSTONE
             table(i + 1) = null
@@ -146,7 +151,7 @@ object ThreadLocal {
       if (size == 0) return
 
       var index: Int           = clean
-      val table: Array[Object] = table
+      val table: Array[Object] = this.table
       var counter              = table.length
 
       var continue: scala.Boolean = false
@@ -264,16 +269,16 @@ object ThreadLocal {
       }
     }
 
-    def getAfterMiss(key: ThreadLocal[_ <: Object]): Object = {
-      val table: Array[Object] = table
+    def getAfterMiss(key: ThreadLocal[_]): Object = {
+      val table: Array[Object] = this.table
       var index: Int           = key.hash & mask
 
       // If the first slot is empty, the search is over
       if (table(index) == null) {
-        val value: Object = key.initialValue()
+        val value: Object = key.initialValue().asInstanceOf[Object]
 
         // If the table is still the same and the slot is still empty...
-        if (this.table == table && table(index) == null) {
+        if ((this.table sameElements table) && table(index) == null) {
           table(index) = key.reference
           table(index + 1) = value
           size += 1
@@ -294,11 +299,11 @@ object ThreadLocal {
       index = next(index)
       while (true) {
         val reference: Object = table(index)
-        if (reference == key.reference) table(index + 1)
+        if (reference == key.reference) return table(index + 1)
 
         // If no entry was found...
         if (reference == null) {
-          val value: Object = key.initialValue()
+          val value: Object = key.initialValue().asInstanceOf[Object]
 
           // If the table is still the same
           if (this.table sameElements table) {
@@ -337,6 +342,8 @@ object ThreadLocal {
 
         index = next(index)
       }
+      // For the compiler
+      null.asInstanceOf[Object]
     }
 
     def remove(key: ThreadLocal[_]): Unit = {

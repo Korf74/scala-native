@@ -50,7 +50,7 @@ class Thread extends Runnable {
 
   def this(group: ThreadGroup, target: Runnable, name: String, stacksize: scala.Long) = {
     this()
-    val currentThread: Thread = currentThread
+    val currentThread: Thread = current.get()
 
     var threadGroup: ThreadGroup = null
     if(group != null) {
@@ -420,13 +420,9 @@ class Thread extends Runnable {
 
   def setUncaughtExceptionHandler(eh: Thread.UncaughtExceptionHandler): Unit =
     exceptionHandler = eh
-
-  trait UncaughtExceptionHandler {
-    def uncaughtException(thread: Thread, e: Throwable): Unit
-  }
 }
 
-object Thread extends Runnable {
+object Thread {
 
   private final val PTHREAD_DEFAULT_ATTR: Ptr[pthread_attr_t] = {
     val attr = stackalloc[pthread_attr_t]
