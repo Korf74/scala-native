@@ -100,14 +100,7 @@ object ScalaNativePluginInternal {
             .getOrElse(Seq.empty)
         ("/usr/local/include" +: includedir).map(s => s"-I$s")
       }
-
-      includes :+ "-D_POSIX_C_SOURCE=200809L"
-
-      includes :+ "-Qunused-arguments" :+
-        (mode(nativeMode.value) match {
-          case tools.Mode.Debug   => "-O0"
-          case tools.Mode.Release => "-O2"
-        })
+      includes :+ "-Qunused-arguments"
     },
     nativeCompileOptions in NativeTest := (nativeCompileOptions in Test).value,
     nativeLinkingOptions := {
@@ -152,12 +145,12 @@ object ScalaNativePluginInternal {
       val targetll = cwd / "target" / "ll.probe"
       val compilec =
         Seq(clang.abs,
-            "-S",
-            "-xc",
-            "-emit-llvm",
-            "-o",
-            targetll.abs,
-            targetc.abs)
+          "-S",
+          "-xc",
+          "-emit-llvm",
+          "-o",
+          targetll.abs,
+          targetc.abs)
       def fail =
         throw new MessageOnlyException("Failed to detect native target.")
 
@@ -274,9 +267,9 @@ object ScalaNativePluginInternal {
             val compiler = if (isCpp) clangpp.abs else clang.abs
             val flags    = (if (isCpp) Seq("-std=c++11") else Seq()) ++ opts
             val compilec = Seq(compiler) ++ flags ++ Seq("-c",
-                                                         path,
-                                                         "-o",
-                                                         opath)
+              path,
+              "-o",
+              opath)
 
             logger.running(compilec)
             val result = Process(compilec, cwd) ! logger

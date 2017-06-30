@@ -3,7 +3,7 @@ package java.lang
 import java.util
 import java.lang.Thread._
 
-import scala.scalanative.native.{CFunctionPtr, CInt, Ptr, stackalloc}
+import scala.scalanative.native.{CFunctionPtr, CFunctionPtr1, CInt, Ptr, stackalloc}
 import scala.scalanative.posix.sys.types.{pthread_attr_t, pthread_t}
 import scala.scalanative.posix.pthread._
 import scala.scalanative.posix.sched._
@@ -264,7 +264,7 @@ class Thread extends Runnable {
       throw new InternalError("Thread Manager internal error " + status)*/
   }
 
-  private def toCRoutine(f: () => Unit): (Ptr[scala.Byte]) => Ptr[scala.Byte] = {
+  private def toCRoutine(f: => (() => Unit)): (Ptr[scala.Byte]) => Ptr[scala.Byte] = {
     def g(ptr: Ptr[scala.Byte]) = {
       f()
       null.asInstanceOf[Ptr[scala.Byte]]
@@ -320,10 +320,13 @@ class Thread extends Runnable {
       // adding the thread to the thread group
       group.add(this)
 
+      val a: (Ptr[scala.Byte]) => Ptr[scala.Byte] = toCRoutine(run)
+
+      val routine = CFunctionPtr.fromFunction1(a)
+
       val id = stackalloc[pthread_t]
       val status = pthread_create(id, null.asInstanceOf[Ptr[pthread_attr_t]],
-        CFunctionPtr.fromFunction1[Ptr[scala.Byte], Ptr[scala.Byte]](
-          toCRoutine(run)), null.asInstanceOf[Ptr[scala.Byte]])
+        routine, null.asInstanceOf[Ptr[scala.Byte]])
       if(status != 0)
         throw new Exception("Failed to create new thread, pthread error " + status)
 
