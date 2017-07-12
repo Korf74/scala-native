@@ -361,11 +361,9 @@ object ForkJoinPool {
     }
 
     def poll: ForkJoinTask[_] = {
-      var a: Array[ForkJoinTask[_]] = null
-      var b: Int = 0
+      var a: Array[ForkJoinTask[_]] = array
+      var b: Int = base
       var t: ForkJoinTask[_] = null
-      b = base
-      a = array
       var break: Boolean = false
       while(b - top < 0 && a != null && !break) {
         val j = (((a.length - 1) & b) << ASHIFT) + ABASE
@@ -422,8 +420,256 @@ object ForkJoinPool {
       false
     }
 
-    // TODO to be continued at cancelAll line 1207
+    def cancelAll(): Unit = {
+      ForkJoinTask.cancelIgnoringExceptions(currentJoin)
+      ForkJoinTask.cancelIgnoringExceptions(currentSteal)
+      var t: ForkJoinTask[_] = poll
+      while(t != null) {
+        ForkJoinTask.cancelIgnoringExceptions(t)
+        t = poll
+      }
+    }
 
+    def nextSeed: Int = {
+      var r = seed
+      r ^= r << 13
+      r ^= r >>> 17
+      r ^= r << 5
+      seed = r
+      seed
+    }
+
+    private def popAndExecAll() = {
+      // A bit faster than repeated pop calls
+      var a: Array[ForkJoinTask[_]] = array
+      var m: Int = a.length - 1
+      var s: Int = top - 1
+      var j: Long = ((m & s) << ASHIFT) + ABASE
+      var t: ForkJoinTask[_] = U.getObject(a, j)
+      while(a != null && m >= 0 && s - base >= 0 && t != null) {
+        if (U.compareAndSwapObject(a, j, t, null)) {
+          top = s
+          t.doExec
+        }
+        a = array
+        m = a.length - 1
+        s = top - 1
+        j = ((m & s) << ASHIFT) + ABASE
+        t = U.getObject(a, j)
+      }
+    }
+
+    private def pollAndExecAll() = {
+      var t: ForkJoinTask[_] = poll
+      while(t != null) {
+        t.doExec
+        t = poll
+      }
+    }
+
+    def tryRemoveAndExec(task: ForkJoinTask[_]): Boolean = {
+      var stat: Boolean = true
+      var removed: Boolean = false
+      var empty: Boolean = true
+      var a: Array[ForkJoinTask[_]] = array
+      var m: Int = a.length - 1
+      var s: Int = top
+      var b: Int = base
+      var n: Int = s - b
+      if (a != null && m >= 0 && n > 0) {
+        var t: ForkJoinTask[_] = null
+        var break: Boolean = false
+        while (!break) { // traverse from s to b
+          s -= 1
+          val j = ((s & m) << ASHIFT) + ABASE
+          t = U.getObjectVolatile(a, j).asInstanceOf[ForkJoinTask[_]]
+          if (t == null) { // inconsistent length
+            break = true
+          }
+          else {
+            if (t eq task) if (s + 1 == top) { // pop
+              if (!U.compareAndSwapObject(a, j, task, null)) {
+                break = true
+                if (!break) {
+                  top = s
+                  removed = true
+                }
+              }
+              else if (base eq b && !break) { // replace with proxy
+                removed = U.compareAndSwapObject(a, j, task, new ForkJoinPool.EmptyTask)
+              }
+              break = true
+            }
+            else if (t.status >= 0 && !break) empty = false
+            else if (s + 1 == top && !break) { // pop and throw away
+              if (U.compareAndSwapObject(a, j, t, null)) top = s
+              break = true
+            }
+            n -= 1
+            if (n == 0 && !break) {
+              if (!empty && (base eq b)) stat = false
+              break = true
+            }
+          }
+        }
+      }
+      if (removed) task.doExec
+        stat
+    }
+
+
+    def pollAndExecCC(root: ForkJoinTask[_]): Boolean = {
+      var a: Array[ForkJoinTask[_]] = array
+      var b: Int = base
+      var o: Object = null
+      var breakOuter: Boolean = false
+      var breakInner: Boolean = false
+      while (b - top < 0 && a != null && !breakOuter) {
+        val j = (((a.length - 1) & b) << ASHIFT) + ABASE
+        if ((o = U.getObject(a, j)) == null || !o.isInstanceOf[CountedCompleter]) {
+          breakOuter = true
+          if (!breakOuter) {
+            var t: CountedCompleter[_] = o.asInstanceOf[CountedCompleter[_]]
+            var r: CountedCompleter[_] = t
+            while (!breakInner) {
+              if (r eq root) {
+                if ((base eq b) && U.compareAndSwapObject(a, j, t, null)) {
+                  base = b + 1
+                  t.doExec
+                  return true
+                }
+                else breakInner = true // restart
+              }
+              r = r.completer
+              if (r == null)
+                breakOuter = true // not part of root computation
+            }
+          }
+        }
+      }
+      false
+    }
+
+
+    def runTask(t: ForkJoinTask[_]): Unit = {
+      if (t != null) {
+        currentSteal = t
+        currentSteal.doExec
+        currentSteal = null
+        nsteals += 1
+        if (base - top < 0) { // process remaining local tasks
+          if (mode eq 0) popAndExecAll()
+          else pollAndExecAll()
+        }
+      }
+    }
+
+    def runSubtask(t: ForkJoinTask[_]): Unit = {
+      if (t != null) {
+        val ps = currentSteal
+        currentSteal = t
+        currentSteal.doExec
+        currentSteal = ps
+      }
+    }
+
+    def isApparentlyUnblocked: Boolean = {
+      var wt: Thread = owner
+      var s: Thread.State = wt.getState
+      eventCount >= 0 && wt != null && (s ne Thread.State.BLOCKED) && (s ne Thread.State.WAITING) && (s ne Thread.State.TIMED_WAITING)
+    }
+
+    //volatile
+    var pad10, pad11, pad12, pad13, pad14, pad15, pad16, pad17: Object = _
+    var pad18, pad19, pad1a, pad1b: Object = _
+
+    private def acquirePlock: Int = {
+      var spins: Int = PL_SPINS
+      var r: Int = 0
+      var ps: Int = 0
+      var nps: Int = 0
+
+      while(true) {
+        ps = plock
+        if(((ps & PL_LOCK) eq 0) && U.compareAndSwapInt(this, PLOCK, ps, nps = ps + PL_LOCK))
+          return nps
+        else if (r == 0) { // randomize spins if possible
+          val t: Thread = Thread.currentThread
+          var w: WorkQueue = null
+          var z: Submitter = null
+          w = t.asInstanceOf[ForkJoinWorkerThread].workQueue
+          if (t.isInstanceOf[ForkJoinWorkerThread] && w != null) r = w.seed
+          else {
+            z = submitters.get
+            if (z != null) r = z.seed
+            else r = 1
+          }
+        }
+        else if (spins >= 0) {
+          r ^= r << 1
+          r ^= r >>> 3
+          r ^= r << 10 // xorshift
+
+          if (r >= 0) {
+            spins -= 1; spins
+          }
+        }
+        else if (U.compareAndSwapInt(this, PLOCK, ps, ps | PL_SIGNAL)) {
+          this.synchronized {
+            if ((plock & PL_SIGNAL) ne 0) {
+              try {
+                wait()
+              } catch {
+                case ie: InterruptedException =>
+                  try
+                    Thread.currentThread.interrupt()
+                  catch {
+                    case ignore: SecurityException =>
+                  }
+              }
+            }
+            else notifyAll()
+          }
+        }
+      }
+    }
+
+
+    private def releasePlock(ps: Int): Unit = {
+      plock = ps
+      this.synchronized(notifyAll())
+    }
+
+    private def tryAddWorker(): Unit = {
+      var c: Long = ctl
+      var u: Int = (c >>> 32) toInt
+      var break: Boolean = false
+      while(u < 0 && (u & SHORT_SIGN) != 0 && c.toInt == 0 && !break) {
+        val nc: Long = (((u + UTC_UNIT) & UTC_MASK) | ((u + UAC_UNIT) & UAC_MASK)).asInstanceOf[Long] << 32
+        if (U.compareAndSwapLong(this, CTL, c, nc)) {
+          var fac: ForkJoinWorkerThreadFactory = factory
+          var ex: Throwable = null
+          var wt: ForkJoinWorkerThread = fac.newThread(this)
+          try {
+            if (fac != null && wt != null) {
+              wt.start()
+              break = true
+            }
+          } catch {
+            case e: Throwable =>
+              ex = e
+          }
+          if(!break) deregisterWorker(wt, ex)
+          break = true
+        }
+        c = ctl
+        u = (c >>> 32) toInt
+      }
+    }
+
+    //  Registering and deregistering workers
+
+    // TODO to be continued line 1696 registerWorker
 
   }
 
@@ -433,6 +679,107 @@ object ForkJoinPool {
 
     final val INITIAL_QUEUE_CAPACITY: Int = 1 << 13
     final val MAXIMUM_QUEUE_CAPACITY: Int = 1 << 26 // 64M
+
+    final var defaultForkJoinWorkerThreadFactory: ForkJoinWorkerThreadFactory = _
+
+    final var submitters: ThreadLocal[Submitter] = _
+
+    private final var modifyThreadPermission: RuntimePermission = _
+
+    final var common: ForkJoinPool = _
+
+    final var commonParallelism: Int = _
+
+    private var poolNumberSequence: Int = _
+
+    // synchronized
+    private final def nextPoolId: Int = {
+      poolNumberSequence += 1
+      poolNumberSequence
+    }
+
+    // static constants
+
+    private final val IDLE_TIMEOUT: Long = 2000L * 1000L * 1000L // 2sec
+
+    private final val FAST_IDLE_TIMEOUT: Long = 200L * 1000L * 1000L
+
+    private final val TIMEOUT_SLOP: Long = 2000000L
+
+    private final val MAX_HELP: Int = 64
+
+    private final val SEED_INCREMENT: Int = 0x61c88647
+
+    // bit positions/shifts for fields
+    private final val AC_SHIFT = 48
+    private final val TC_SHIFT = 32
+    private final val ST_SHIFT = 31
+    private final val EC_SHIFT = 16
+
+    // bounds
+    private final val SMASK = 0xffff // short bits
+
+    private final val MAX_CAP = 0x7fff // max #workers - 1
+
+    private final val EVENMASK = 0xfffe // even short bits
+
+    private final val SQMASK = 0x007e // max 64 (even) slots
+
+    private final val SHORT_SIGN = 1 << 15
+    private final val INT_SIGN = 1 << 31
+
+    // masks
+    private final val STOP_BIT = 0x0001L << ST_SHIFT
+    private final val AC_MASK = SMASK.toLong << AC_SHIFT
+    private final val TC_MASK = SMASK.toLong << TC_SHIFT
+
+    // units for incrementing and decrementing
+    private final val TC_UNIT = 1L << TC_SHIFT
+    private final val AC_UNIT = 1L << AC_SHIFT
+
+    // masks and units for dealing with u = (int)(ctl >>> 32)
+    private final val UAC_SHIFT = AC_SHIFT - 32
+    private final val UTC_SHIFT = TC_SHIFT - 32
+    private final val UAC_MASK = SMASK << UAC_SHIFT
+    private final val UTC_MASK = SMASK << UTC_SHIFT
+    private final val UAC_UNIT = 1 << UAC_SHIFT
+    private final val UTC_UNIT = 1 << UTC_SHIFT
+
+    // masks and units for dealing with e = (int)ctl
+    private final val E_MASK = 0x7fffffff // no STOP_BIT
+
+    private final val E_SEQ = 1 << EC_SHIFT
+
+    // plock bits
+    private final val SHUTDOWN = 1 << 31
+    private final val PL_LOCK = 2
+    private final val PL_SIGNAL = 1
+    private final val PL_SPINS = 1 << 8
+
+    // access mode for WorkQueue
+    val LIFO_QUEUE = 0
+    val FIFO_QUEUE = 1
+    val SHARED_QUEUE: Int = -1
+
+    // bounds for #steps in scan loop -- must be power 2 minus 1
+    private final val MIN_SCAN = 0x1ff // cover estimation slop
+
+    private final val MAX_SCAN = 0x1ffff // 4 * max workers
+
+    //volatile
+    var pad00, pad01, pad02, pad03, pad04, pad05, pad06: Long = _
+
+    /*volatile*/
+    val stealCount = 0L // collects worker counts
+    val ctl = 0L // main pool control
+    val plock = 0 // shutdown status and seqLock
+    val indexSeed = 0 // worker/submitter index seed
+    /*no longer volatile*/
+    val config = 0 // mode and parallelism level
+    val workQueues: Array[WorkQueue] = null // main registry
+    final val factory: ForkJoinWorkerThreadFactory = null
+    final val ueh: Thread.UncaughtExceptionHandler = null // per-worker UEH
+    final val workerNamePrefix: String = null // to create worker name string
 
   }
 
