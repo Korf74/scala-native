@@ -17,33 +17,50 @@ class Thread extends Runnable {
   current = new ThreadLocal[Thread]()
   current.set(this)
 
-  private var interruptedState   = false
+  private var interruptedState = false
+
+  // Thread's name
   private[this] var name: String = "main" // default name of the main thread
 
+  // This thread's thread group
   var group: ThreadGroup = _
 
+  // This thread's context class loader
   private var contextClassLoader: ClassLoader = _
 
+  // Indicates whether this thread was marked as daemon
   private var daemon: scala.Boolean = false
 
+  // Thread's priority
   private var priority: Int = _
 
+  // Stack size to be passes to VM for thread execution //TODO ???
   private var stackSize: scala.Long = 0L
 
+  // Indicates if the thread was already started
   var started: scala.Boolean = false
 
+  // Indicates if the thread is alive
+  // Note : this was originally named 'isAlive' in Harmony but
+  // conflicted with the 'isAlive' method
   var alive: scala.Boolean = false
 
+  // Thread's target - a Runnable object whose run method should be invoked
   private var target: Runnable = _
 
+  // Uncaught exception handler for this thread
   private var exceptionHandler: Thread.UncaughtExceptionHandler = _
 
+  // Thread's ID
   private var threadId: scala.Long = _
 
+  // The underlying pthread ID
   private var underlying: Option[pthread_t] = None
 
+  // Synchronization is done using internal lock
   val lock: Object = new Object()
 
+  // ThreadLocal values : local and inheritable
   var localValues: ThreadLocal.Values = _
 
   var inheritableValues: ThreadLocal.Values = _
@@ -142,38 +159,13 @@ class Thread extends Runnable {
     // this method is not implemented
     throw new NoSuchMethodError()
 
-  def getContextClassLoader: ClassLoader = {
-    lock.synchronized{
-      /*
-      // First, if the conditions
-      //    1) there is a security manager
-      //    2) the caller's class loader is not null
-      //    3) the caller's class loader is not the same as or an
-      //    ancestor of contextClassLoader
-      // are satisfied we should perform a security check.
-        //the first condition is satisfied
-      val callerClassLoader: ClassLoader = VMClassRegistry.getClassLoader(VMStack.getCallerClass(0))
-      if(callerClassLoader != null) {
-        //the second condition is satisfied
-        var classLoader: ClassLoader = contextClassLoader
-        while(classLoader != null) {
-          if(classLoader == callerClassLoader) {
-            //the third condition is not satisfied
-            return contextClassLoader
-          }
-          classLoader = classLoader.getParent
-        }
-      }
-      */
-      contextClassLoader
-    }
-  }
+  def getContextClassLoader: ClassLoader = lock.synchronized(contextClassLoader)
 
   final def getName: String = name
 
   final def getPriority: Int = priority
 
-  def getStackTrace: Array[StackTraceElement] = {/*
+  def getStackTrace: Array[StackTraceElement] = {/* // TODO a revoir
     val ste: Array[StackTraceElement] = VMStack.getThreadStackTrace(this)
     if(ste != null) ste else */new Array[StackTraceElement](0)
   }
@@ -312,7 +304,7 @@ class Thread extends Runnable {
   }
 
   //synchronized
-  def start(): Unit = {
+  def start(): Unit = {/*
     lock.synchronized{
       if(started)
         //this thread was started
@@ -333,7 +325,7 @@ class Thread extends Runnable {
       started = true
       underlying = Some(!id)
 
-    }
+    }*/
   }
 
   type State = CInt
@@ -393,15 +385,7 @@ class Thread extends Runnable {
   }
 
   @deprecated
-  final def suspend(): Unit = {
-    /*
-    checkAccess()
-
-    val status = VMThreadManager.suspend(this)
-    if(status != VMThreadManager.TM_ERROR_NONE)
-      throw new InternalError("Thread Manager internal error " + status)
-      */
-  }
+  final def suspend(): Unit = {}
 
   override def toString: String = {
     val threadGroup: ThreadGroup = group
@@ -461,18 +445,25 @@ object Thread {
   private val MainRunnable = new Runnable { def run(): Unit = () }
   private val MainThread   = new Thread(MainRunnable)
 
+  // Default uncaught exception handler
   private var defaultExceptionHandler: UncaughtExceptionHandler = _
 
-  private var threadOrdinalNum: scala.Long = 0
+  // Counter used to generate thread's ID
+  private var threadOrdinalNum: scala.Long = 0L
 
+  // used to generate a default thread name
   private final val THREAD: String = "Thread-"
 
+  // System thread group for keeping helper threads
   var systemThreadGroup: ThreadGroup = _
 
+  // Main thread group
   var mainThreadGroup: ThreadGroup = _
 
+  // Number of threads that was created w/o garbage collection //TODO
   private var currentGCWatermarkCount: Int = 0
 
+  // Max number of threads to be created w/o GC, required collect dead Thread references
   private final val GC_WATERMARK_MAX_COUNT: Int = 700
 
   def activeCount: Int = currentThread().group.activeCount()
@@ -502,12 +493,8 @@ object Thread {
   }
 
   def `yield`(): Unit = {
-    //TODO I'm not sure what to do with this
-    /*
-    val status: Int = VMThreadManager._yield()
-    if(status != VMThreadManager.TM_ERROR_NONE)
-      throw new InternalError("Thread Manager internal error " + status)
-      */
+    //TODO I'm not sure if that's okay
+    sched_yield()
   }
 
   def getAllStackTraces: java.util.Map[Thread, Array[StackTraceElement]] = {
@@ -550,7 +537,7 @@ object Thread {
 
   //synchronized
   private def getNextThreadId: scala.Long = {
-    threadOrdinalNum  += 1
+    threadOrdinalNum += 1
     threadOrdinalNum
   }
 
