@@ -172,7 +172,7 @@ object CountedCompleter {
   private final val serialVersionUID: Long = 5232453752276485070L
 
   // TODO
-  private final var PENDING: Long = ???
+  private final var PENDING: Long = _
 
 }
 
@@ -669,7 +669,189 @@ object ForkJoinPool {
 
     //  Registering and deregistering workers
 
-    // TODO to be continued line 1696 registerWorker
+    def registerWorker(wt: ForkJoinWorkerThread): WorkQueue = {
+      var handler: Thread.UncaughtExceptionHandler = ueh
+      var ws: Array[WorkQueue] = workQueues
+      var s: Int = 0
+      var s1: Int = 0
+      var ps: Int = plock
+      wt.setDaemon(true)
+      if (handler != null) wt.setUncaughtExceptionHandler(handler)
+      do {s = indexSeed; s1 = s + INDEXSEED} while {
+        !U.compareAndSwapInt(this, INDEXSEED, s, s1) || s1 == 0
+      } // skip 0
+
+      val w: WorkQueue = new WorkQueue(this, wt, config >>> 16, s)
+      if (((ps & PL_LOCK) != 0) || !U.compareAndSwapInt(this, PLOCK, ps, ps + PL_LOCK)) ps = acquirePlock
+      val nps: Int = (ps & SHUTDOWN) | ((ps + PL_LOCK) & ~SHUTDOWN)
+      try {
+        if (ws != null) { // skip if shutting down
+          var n: Int = ws.length
+          var m: Int = n - 1
+          var r: Int = (s << 1) | 1 // use odd-numbered indices
+          if (ws(r &= m) != null) { // collision
+            var probes: Int = 0
+            // step by approx half size
+            val step: Int = if (n <= 4) 2 else ((n >>> 1) & EVENMASK) + 2
+            while (ws(r = (r + step) & m) != null) {
+              probes += 1
+              if (probes >= n) {
+                ws = util.Arrays.copyOf(ws, n <<= 1)
+                workQueues = ws
+                m = n - 1
+                probes = 0
+              }
+            }
+          }
+          w.poolIndex = r // volatile write orders
+          w.eventCount = w.poolIndex
+
+          ws(r) = w
+        }
+      } finally
+        if (!U.compareAndSwapInt(this, PLOCK, ps, nps)) releasePlock(nps)
+      wt.setName(workerNamePrefix.concat(Integer.toString(w.poolIndex)))
+      w
+    }
+
+    def deregisterWorker(wt: ForkJoinWorkerThread, ex: Throwable): Unit = {
+      val w: WorkQueue = wt.workQueue
+      if(wt != null && w != null) {
+        var ps: Int = 0
+        w.qlock = -1 // ensure set
+        val ns: Long = w.nsteals // collect steal count
+        var sc: Long = stealCount
+        do {sc = stealCount} while {
+          !U.compareAndSwapLong(this, STEALCOUNT, sc, sc + ns)
+        }
+        ps = plock
+        if((ps & PL_LOCK) != 0 || !U.compareAndSwapInt(this, PLOCK, ps, ps + PL_LOCK))
+          ps = acquirePlock
+        else ps += PL_LOCK
+        val nps: Int = (ps & SHUTDOWN) | ((ps + PL_LOCK) & ~SHUTDOWN)
+        try {
+          val idx: Int = w.poolIndex
+          val ws: Array[WorkQueue] = workQueues
+          if(ws != null && idx >= 0 && idx < ws.length && ws(idx) == w)
+            w(idx) = null
+        } finally {
+          if(!U.compareAndSwapInt(this, PLOCK, ps, nps))
+            releasePlock(nps)
+        }
+      }
+
+      var c: Long = ctl //adjust ctl counts
+      do {c = ctl} while(!U.compareAndSwapLong(this, CTL, c, (((c - AC_UNIT) & AC_MASK) | ((c - TC_UNIT) & TC_MASK) | (c & ~(AC_MASK | TC_MASK)))))
+
+      if(!tryTerminate(false, false) && w != null && w.array != null) {
+        w.cancelAll()
+        c = ctl
+        var ws: Array[WorkQueue] = workQueues
+        var p: Thread = _
+        var u: Int = c >>> 32 toInt
+        var e: Int = c toInt
+        var i: Int = e & SMASK
+        var v: WorkQueue = ws(i)
+
+        while(u < 0 && e >= 0) {
+          if(e > 0) { // activate or create replacement
+            if(ws == null || i >= ws.length || v == null)
+              break
+            val nc: Long = (((v.nextWait & E_MASK)).toLong | (((u + UAC_UNIT) << 32).toLong))
+            if(v.eventCount != (e | INT_SIGN))
+              break
+            if(U.compareAndSwapLong(this, CTL, c, nc)) {
+              v.eventCount = (e + E_SEQ) & E_MASK
+              p = v.parker
+              if(p != null)
+                U.unpark(p)
+              break
+            }
+          } else {
+            if(u.toShort < 0)
+              tryAddWorker()
+            break
+          }
+
+          u = (c >>> 32).toInt
+          e = c.toInt
+          i = e & SMASK
+          v = ws(i)
+          ws = workQueues
+        }
+      }
+      if(ex == null) // help clean refs on way out
+        ForkJoinTask.helpExpungeStaleExceptions()
+      else // rethrow
+        ForkJoinTask.rethrow(ex)
+    }
+
+    // Submissions
+
+    def externalPush(task: ForkJoinTask[_]): Unit = {
+      var ws: Array[WorkQueue] = workQueues
+      var z: Submitter = submitters.get
+      var m: Int = ws.length - 1
+      var q: WorkQueue = ws(m & z.seed & SQMASK)
+      var a: Array[ForkJoinTask[_]] = q.array
+      if (z != null && plock > 0 && ws != null && m >= 0 && q != null && U.compareAndSwapInt(q, QLOCK, 0, 1)) { // lock
+        val b: Int = q.base
+        val s: Int = q.top
+        var n: Int = s + 1 - b
+        var an: Int = a.length
+        if (a != null && an > n) {
+          val j = (((an - 1) & s) << ASHIFT) + ABASE
+          U.putOrderedObject(a, j, task)
+          q.top = s + 1 // push on to deque
+
+          q.qlock = 0
+          if (n <= 2) signalWork(q)
+          return
+        }
+        q.qlock = 0
+      }
+      fullExternalPush(task)
+    }
+
+    private def fullExternalPush(task: ForkJoinTask[_]): Unit = {
+      var r: Int = 0 // random index seed
+      var z: Submitter = submitters.get()
+      while(true) {
+        val ws: Array[WorkQueue] = workQueues
+        val q: WorkQueue = _
+        var ps: Int = plock
+        var m: Int = _
+        var k: Int = _
+        if(z == null) {
+          val r1 = INDEXSEED
+          r = r1 + SEED_INCREMENT
+          if(U.compareAndSwapInt(this, INDEXSEED, r1, r) && r != 0) {
+            z = new Submitter(r)
+            submitters.set(z)
+          }
+        } else if(r == 0) {
+          r = z.seed
+          r ^= r << 13
+          r ^= r >>> 17
+          z.seed = r ^ (r << 5)
+        } else if(ps < 0)
+          throw new RejectedExecutionException()
+        else if(ps == 0 || ws == null || m < 0) {
+          val p: Int = config & SMASK // find power of two table size
+          var n: Int = if(p > 1) p -1 else 1 // ensure at least 2 slots
+          n |= n >>> 1
+          n |= n >>> 2
+          n |= n >>> 4
+          n |= n >>> 8
+          n |= n >>> 16
+          n = (n + 1) << 1
+          ws = workQueues
+          val nws: Array[WorkQueue] = if(ws == null || ws.length == 0) new Array[WorkQueue](n) else null
+          // TODO line 1879
+        }
+        z = submitters.get()
+      }
+    }
 
   }
 
