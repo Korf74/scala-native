@@ -817,8 +817,8 @@ object ForkJoinPool {
       var r: Int = 0 // random index seed
       var z: Submitter = submitters.get()
       while(true) {
-        val ws: Array[WorkQueue] = workQueues
-        val q: WorkQueue = _
+        var ws: Array[WorkQueue] = workQueues
+        var q: WorkQueue = _
         var ps: Int = plock
         var m: Int = _
         var k: Int = _
@@ -847,11 +847,121 @@ object ForkJoinPool {
           n = (n + 1) << 1
           ws = workQueues
           val nws: Array[WorkQueue] = if(ws == null || ws.length == 0) new Array[WorkQueue](n) else null
-          // TODO line 1879
+          val ps1 = ps
+          ps += PL_LOCK
+          if(ps1 & PL_LOCK != 0 || !U.compareAndSwapInt(this, ps1, ps))
+            ps = acquirePlock
+          ws = workQueues
+          if((ws == null || ws.length == 0) && nws != null)
+            workQueues = nws
+          val nps: Int = (ps & SHUTDOWN) | (ps + PL_LOCK) & ~SHUTDOWN
+          if(!U.compareAndSwapInt(this, PLOCK, ps, nps))
+            releasePlock(nps)
+        } else {
+          k = r & m & SQMASK
+          q = ws(k)
+          if(q != null) {
+            if(q.qlock == 0 && U.compareAndSwapInt(q, QLOCK, 0, 1)) {
+              var a: Array[ForkJoinTask[_]] = q.array
+              val s: Int = q.top
+              var submitted: Boolean = false
+              try { // locked version of push
+                if((a != null && a.length > s + 1 - q.base) ||
+                (q.growArray != null)) { // must presize
+                  a = q.growArray
+                  val j: Int = (((a.length - 1) & s) << ASHIFT) + ABASE
+                  U.putOrderedObject(a, j, task)
+                  q.top = s + 1
+                  submitted = true
+                }
+              } finally {
+                q.qlock = 0 // unlock
+              }
+              if(submitted) {
+                signalWork(q)
+                return
+              }
+            }
+            r = 0 // move on failure
+          } else {
+            ps = plock
+            if(ps & PL_LOCK == 0) { //create new queue
+              q = new WorkQueue(this, null, SHARED_QUEUE, r)
+              val ps1 = plock
+              ps = ps1 + PL_LOCK
+              if((ps & PL_LOCK != 0) || !U.compareAndSwapInt(this, PLOCK, ps1, ps))
+                ps = acquirePlock
+              ws = workQueues
+              if(ws != null && k < ws.length && ws(k) == null)
+                ws(k) = q
+              val nps: Int = (ps & SHUTDOWN) | ((ps + PL_LOCK) & ~SHUTDOWN)
+              if(!U.compareAndSwapInt(this, PLOCK, ps, nps))
+                releasePlock(nps)
+            }
+            else r = 0 // try elsewhere while lock held
+          }
         }
         z = submitters.get()
       }
     }
+
+    // Maintaining ctl counts
+
+    def incrementActiveCount(): Unit = {
+      var c: Long = ctl
+      while(!U.compareAndwapLong(this, CTL, c, c + AC_UNIT)) {
+        c = ctl
+      }
+    }
+
+    def signalWork(q: WorkQueue): Unit = {
+      val hint: Int = q.poolIndex
+      var c: Long = ctl
+      var e: Int = _
+      var u: Int = (c >>> 32).toInt
+      var i: Int = _
+      var n: Int = _
+      var ws: Array[WorkQueue] = _
+      val w: WorkQueue = _
+      val p: Thread = _
+
+      while(u < 0) {
+        e = c.toInt
+        if(e > 0) {
+          ws = workQueues
+          i = e & SMASK
+          w = ws(i)
+          if(ws != null && ws.length > i && w != null && w.eventCount == (e | INT_SIGN)) {
+            val nc: Long = ((w.nextWait & E_MASK).toLong) | ((u + UAC_UNIT) << 32).toLong
+            if(U.compareAndSwapLong(this, CTL, c, nc)) {
+              w.hint = hint
+              w.eventCount = (e + E_SEQ) & E_MASK
+              p = w.parker
+              if(p != null)
+                U.unpark(p)
+              break
+            }
+            if(q.top - q.base <= 0)
+              break
+          } else break
+        } else {
+          if(u.toShort < 0)
+            tryAddWorker()
+          break
+        }
+        c = ctl
+        u = (c >>> 32).toInt
+      }
+    }
+
+    // Scanning for tasks
+
+    def runWorker(w: WorkQueue): Unit = {
+      w.growArray // allocate queue
+      do { w.runTask(scan(w)) } while(w.qlock >= 0)
+    }
+
+    // TODO line 2019 scan
 
   }
 
