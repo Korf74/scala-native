@@ -54,8 +54,8 @@ class AtomicLong(private[this] var value: Long)
     newValue
   }
 
-  override def toString(): String =
-    value.toString()
+  override def toString: String =
+    value.toString
 
   def intValue(): Int       = value.toInt
   def longValue(): Long     = value
