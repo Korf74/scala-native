@@ -185,16 +185,16 @@ object CountedCompleter {
 
 }
 
-class ForkJoinPool(parallelism: Int, val factory: ForkJoinWorkerThreadFactory, val ueh: Thread.UncaughtExceptionHandler, asyncMode: Boolean)
+class ForkJoinPool(parallelism: Int, val factory: ForkJoinPool.ForkJoinWorkerThreadFactory, val ueh: Thread.UncaughtExceptionHandler, asyncMode: Boolean)
   extends AbstractExecutorService {
 
   import ForkJoinPool._
 
-  def this() = this(Math.min(MAX_CAP, Runtime.getRuntime.availableProcessors()), defaultForkJoinWorkerThreadFactory, null, false)
+  def this() = this(Math.min(ForkJoinPool.MAX_CAP, Runtime.getRuntime.availableProcessors()), ForkJoinPool.defaultForkJoinWorkerThreadFactory, null, false)
 
-  def this(p: Int) = this(p, defaultForkJoinWorkerThreadFactory, null, false)
+  def this(p: Int) = this(p, ForkJoinPool.defaultForkJoinWorkerThreadFactory, null, false)
 
-  def this(p: Int, c: Long, fac: ForkJoinWorkerThreadFactory, h: Thread.UncaughtExceptionHandler) = {
+  def this(p: Int, c: Long, fac: ForkJoinPool.ForkJoinWorkerThreadFactory, h: Thread.UncaughtExceptionHandler) = {
     this(p, fac, h, false)
     config = p
     ctl.store(c)
@@ -539,11 +539,11 @@ class ForkJoinPool(parallelism: Int, val factory: ForkJoinWorkerThreadFactory, v
           r = 0 // move on failure
         } else {
           ps = plock
-          if(ps & PL_LOCK == 0) { //create new queue
+          if((ps & PL_LOCK) == 0) { //create new queue
             q = new WorkQueue(this, null, SHARED_QUEUE, r)
             val ps1 = plock
             ps = ps1 + PL_LOCK
-            if((ps & PL_LOCK != 0) || !plock.compareAndSwapStrong(ps1, ps))
+            if(((ps & PL_LOCK) != 0) || !plock.compareAndSwapStrong(ps1, ps))
               ps = acquirePlock
             ws = workQueues
             if(ws != null && k < ws.length && ws(k) == null)
@@ -576,8 +576,8 @@ class ForkJoinPool(parallelism: Int, val factory: ForkJoinWorkerThreadFactory, v
     var i: Int = 0
     var n: Int = 0
     var ws: Array[WorkQueue] = null
-    val w: WorkQueue = null
-    val p: Thread = null
+    var w: WorkQueue = null
+    var p: Thread = null
 
     var break: Boolean = false
     while(u < 0 && !break) {
@@ -663,8 +663,7 @@ class ForkJoinPool(parallelism: Int, val factory: ForkJoinWorkerThreadFactory, v
         if(stealCount.compareAndSwapStrong(sc, sc + ns))
           w.nsteals = 0 // collect steals and rescan
       }
-      else if(plock != ps)
-        skip // ?
+      else if(plock != ps) {} // skip
       else {
         c = ctl
         e = c.toInt
@@ -682,7 +681,7 @@ class ForkJoinPool(parallelism: Int, val factory: ForkJoinWorkerThreadFactory, v
               else if((c >> AC_SHIFT).toInt == 1 - (config & SMASK))
                 idleAwaitWork(w, nc, c)
             }
-            else if(e.eventCount < 0 && ctl == c) {
+            else if(w.eventCount < 0 && ctl == c) {
               val wt: Thread = Thread.currentThread()
               Thread.interrupted() // clear status
               U.putObject(wt, PARKBLOCKET, this)
@@ -694,14 +693,14 @@ class ForkJoinPool(parallelism: Int, val factory: ForkJoinWorkerThreadFactory, v
             }
           }
           q = ws(h)
-          if((h >= 0 || (h = w.hint) >= 0) && q != null) { // signal others before retry
+          if((h >= 0 || {h = w.hint; h} >= 0) && q != null) { // signal others before retry
             var p: Thread = null
             c = ctl
             var u: Int = 0
             var i: Int = 0
             var v: WorkQueue = ws(i)
             var s: Int = 0
-            var n: Int = (config & mask) - 1
+            var n: Int = (config & SMASK) - 1
 
             var break: Boolean = false
             while(!break) {
@@ -733,8 +732,8 @@ class ForkJoinPool(parallelism: Int, val factory: ForkJoinWorkerThreadFactory, v
           }
         }
       }
-      null
     }
+    null
   }
 
   private def idleAwaitWork(w: WorkQueue, currentCtl: Long, prevCtl: Long): Unit = {
@@ -1675,7 +1674,7 @@ object ForkJoinPool {
     var mode: Int = 0 // 0: lifo, > 0: fifo, < 0: shared
     var nsteals: Int = 0 // number of steals
     //volatile
-    var qlock: Int = AtomicInt() // 1: locked, -1: terminate; else 0
+    var qlock = CAtomicInt() // 1: locked, -1: terminate; else 0
     //volatile
     var base: Int = 0 // index of next slot for poll
     var top: Int = 0 // index of next slot for push
@@ -1796,7 +1795,7 @@ object ForkJoinPool {
       a = array
       if (a != null) {
         val j: Int = (((a.length - 1) & b) << ASHIFT) + ABASE
-        if ((t = U.getObjectVolatile(a, j).asInstanceOf[Nothing]) != null && (base eq b) && U.compareAndSwapObject(a, j, t, null)) {
+        if ((t = U.getObjectVolatile(a, j).asInstanceOf[Nothing]) != null && (base == b) && U.compareAndSwapObject(a, j, t, null)) {
           base = b + 1
           return t
         }
@@ -1813,12 +1812,12 @@ object ForkJoinPool {
         val j = (((a.length - 1) & b) << ASHIFT) + ABASE
         t = U.getObjectVolatile(a, j).asInstanceOf[Nothing]
         if (t != null) {
-          if ((base eq b) && U.compareAndSwapObject(a, j, t, null)) {
+          if ((base == b) && U.compareAndSwapObject(a, j, t, null)) {
             base = b + 1
             return t
           }
         }
-        else if (base eq b) {
+        else if (base == b) {
           if (b + 1 == top) {
             break = true
             Thread.`yield` // wait for lagging update (very rare)
@@ -1835,7 +1834,7 @@ object ForkJoinPool {
 
 
     def nextLocalTask: ForkJoinTask[_] = {
-      if (mode eq 0) pop
+      if (mode == 0) pop
       else poll
     }
 
@@ -1844,7 +1843,7 @@ object ForkJoinPool {
       var m: Int = 0
       m = a.length - 1
       if (a == null || m < 0) return null
-      val i = if (mode eq 0) top - 1
+      val i = if (mode == 0) top - 1
       else base
       val j = ((i & m) << ASHIFT) + ABASE
       U.getObjectVolatile(a, j).asInstanceOf[ForkJoinTask[_]]
@@ -1932,7 +1931,7 @@ object ForkJoinPool {
             break = true
           }
           else {
-            if (t eq task) if (s + 1 == top) { // pop
+            if (t == task) if (s + 1 == top) { // pop
               if (!U.compareAndSwapObject(a, j, task, null)) {
                 break = true
                 if (!break) {
@@ -1940,7 +1939,7 @@ object ForkJoinPool {
                   removed = true
                 }
               }
-              else if (base eq b && !break) { // replace with proxy
+              else if (base == b && !break) { // replace with proxy
                 removed = U.compareAndSwapObject(a, j, task, new ForkJoinPool.EmptyTask)
               }
               break = true
@@ -1952,7 +1951,7 @@ object ForkJoinPool {
             }
             n -= 1
             if (n == 0 && !break) {
-              if (!empty && (base eq b)) stat = false
+              if (!empty && (base == b)) stat = false
               break = true
             }
           }
@@ -1977,8 +1976,8 @@ object ForkJoinPool {
             var t: CountedCompleter[_] = o.asInstanceOf[CountedCompleter[_]]
             var r: CountedCompleter[_] = t
             while (!breakInner) {
-              if (r eq root) {
-                if ((base eq b) && U.compareAndSwapObject(a, j, t, null)) {
+              if (r == root) {
+                if ((base == b) && U.compareAndSwapObject(a, j, t, null)) {
                   base = b + 1
                   t.doExec
                   return true
@@ -2003,7 +2002,7 @@ object ForkJoinPool {
         currentSteal = null
         nsteals += 1
         if (base - top < 0) { // process remaining local tasks
-          if (mode eq 0) popAndExecAll()
+          if (mode == 0) popAndExecAll()
           else pollAndExecAll()
         }
       }
