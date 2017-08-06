@@ -3,16 +3,11 @@ package java.lang
 import java.util
 import java.lang.Thread._
 
-import scala.scalanative.native.{
-  CFunctionPtr,
-  CFunctionPtr1,
-  CInt,
-  Ptr,
-  stackalloc
-}
+import scala.scalanative.native.{CFunctionPtr, CFunctionPtr1, CInt, Ptr, ULong, stackalloc}
 import scala.scalanative.posix.sys.types.{pthread_attr_t, pthread_t}
 import scala.scalanative.posix.pthread._
 import scala.scalanative.posix.sched._
+
 
 // Ported from Harmony
 
@@ -58,7 +53,10 @@ class Thread extends Runnable {
   private var threadId: scala.Long = _
 
   // The underlying pthread ID
-  private var underlying: Option[pthread_t] = None
+  private var underlying: pthread_t = 0.asInstanceOf[ULong]
+
+  // validity of pthread ID
+  private var valid: Boolean = false
 
   // Synchronization is done using internal lock
   val lock: Object = new Object()
@@ -161,6 +159,23 @@ class Thread extends Runnable {
 
   def this(group: ThreadGroup, name: String) = this(group, null, name, 0)
 
+  // TODO
+  override def equals(o: Any): scala.Boolean = {
+    if(!super.equals(o) || !o.isInstanceOf[Thread]) return false
+
+    val t: Thread = o.asInstanceOf[Thread]
+    t.getPID == getPID && t.getId == threadId
+  }
+
+  // TODO
+  override def hashCode(): Int = {
+    getPID.hashCode()
+  }
+
+  def fff = 1
+
+  def getPID: Option[pthread_t] = if(valid) Some(underlying) else None
+
   final def checkAccess(): Unit = ()
 
   @deprecated
@@ -190,8 +205,8 @@ class Thread extends Runnable {
   def getId: scala.Long = threadId
 
   def getPthreadId: pthread_t = {
-    if (started && underlying.isDefined)
-      underlying.get
+    if (started && valid)
+      underlying
     else throw new NullPointerException("Thread isn't started yet")
   }
 
@@ -199,7 +214,7 @@ class Thread extends Runnable {
     lock.synchronized {
       checkAccess()
       val status: Int =
-        if (underlying.isDefined) pthread_cancel(underlying.get) else 0
+        if (valid) pthread_cancel(underlying) else 0
       if (status != 0)
         throw new InternalError("Pthread error " + status)
     }
@@ -308,18 +323,18 @@ class Thread extends Runnable {
     this.priority =
       if (priority > threadGroup.maxPriority) threadGroup.maxPriority
       else priority
-    if (underlying.isDefined) {
+    if (valid) {
       val param: Ptr[sched_param] = stackalloc[sched_param]
       val policy: Ptr[CInt]       = stackalloc[CInt]
-      pthread_getschedparam(underlying.get, policy, param)
+      pthread_getschedparam(underlying, policy, param)
       !param._1 = priority
-      pthread_setschedparam(underlying.get, !policy, param)
+      pthread_setschedparam(underlying, !policy, param)
     }
   }
 
   //synchronized
   def start(): Unit = { /*
-    lock.synchronized{
+    lock.synchronized {
       if(started)
         //this thread was started
         throw new IllegalThreadStateException("This thread was already started!")
@@ -337,7 +352,8 @@ class Thread extends Runnable {
         throw new Exception("Failed to create new thread, pthread error " + status)
 
       started = true
-      underlying = Some(!id)
+      underlying = !id
+      THREAD_LIST(underlying) = this
 
     }*/ }
 
@@ -389,8 +405,8 @@ class Thread extends Runnable {
     if (throwable == null)
       throw new NullPointerException("The argument is null!")
     lock.synchronized {
-      if (isAlive && underlying.isDefined) {
-        val status: Int = pthread_cancel(underlying.get)
+      if (isAlive && valid) {
+        val status: Int = pthread_cancel(underlying)
         if (status != 0)
           throw new InternalError("Pthread error " + status)
       }
@@ -424,32 +440,28 @@ class Thread extends Runnable {
 
 object Thread {
 
-  /*private final val PTHREAD_DEFAULT_ATTR: Ptr[pthread_attr_t] = {
-    val attr = stackalloc[pthread_attr_t]
-    pthread_attr_init(attr)
-    attr
-  }
+  private final val THREAD_LIST = new mutable.HashMap[pthread_t, Thread]
 
-  private final val PTHREAD_DEFAULT_SCHED_PARAM = {
-    val param: Ptr[sched_param] = stackalloc[sched_param]
-    pthread_attr_getschedparam(PTHREAD_DEFAULT_ATTR, param)
-    param
-  }
+  private final val PTHREAD_DEFAULT_ATTR: Ptr[pthread_attr_t] = stackalloc[pthread_attr_t]
+  pthread_attr_init(PTHREAD_DEFAULT_ATTR)
 
-  private final val PTHREAD_DEFAULT_POLICY = {
-    val policy = stackalloc[CInt]
-    pthread_attr_getschedpolicy(PTHREAD_DEFAULT_ATTR, policy)
-  }*/
+  private final val PTHREAD_DEFAULT_SCHED_PARAM: Ptr[sched_param] = stackalloc[sched_param]
+  pthread_attr_getschedparam(PTHREAD_DEFAULT_ATTR, PTHREAD_DEFAULT_SCHED_PARAM)
+
+  private final val PTHREAD_DEFAULT_POLICY: Ptr[CInt] = stackalloc[CInt]
+  pthread_attr_getschedpolicy(PTHREAD_DEFAULT_ATTR, PTHREAD_DEFAULT_POLICY)
+
+  private val lock: Object = new Object()
 
   final val MAX_PRIORITY: Int = {
-    10 //sched_get_priority_max(PTHREAD_DEFAULT_POLICY)
+    sched_get_priority_max(!PTHREAD_DEFAULT_POLICY)
   }
 
   final val MIN_PRIORITY: Int = {
-    0 //sched_get_priority_min(PTHREAD_DEFAULT_POLICY)
+    sched_get_priority_min(!PTHREAD_DEFAULT_POLICY)
   }
 
-  final val NORM_PRIORITY: Int = 5 //!PTHREAD_DEFAULT_SCHED_PARAM._1
+  final val NORM_PRIORITY: Int = !PTHREAD_DEFAULT_SCHED_PARAM._1
 
   final val STACK_TRACE_INDENT: String = "    "
 
@@ -459,12 +471,6 @@ object Thread {
   private val MainThread = new Thread()
 
   MainThread.group = mainThreadGroup
-
-  private val current: ThreadLocal[Thread] = {
-    val a = new ThreadLocal[Thread]()
-    a.set(MainThread)
-    a
-  }
 
   // Default uncaught exception handler
   private var defaultExceptionHandler: UncaughtExceptionHandler = _
@@ -486,7 +492,7 @@ object Thread {
 
   def activeCount: Int = currentThread().group.activeCount()
 
-  def currentThread(): Thread = MainThread
+  def currentThread(): Thread = lock.synchronized(THREAD_LIST.getOrElse(pthread_self(), MainThread))
 
   def dumpStack(): Unit = {
     val stack: Array[StackTraceElement] = new Throwable().getStackTrace
