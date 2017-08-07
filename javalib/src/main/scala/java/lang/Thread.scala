@@ -55,9 +55,6 @@ class Thread extends Runnable {
   // The underlying pthread ID
   private var underlying: pthread_t = 0.asInstanceOf[ULong]
 
-  // validity of pthread ID
-  private var valid: Boolean = false
-
   // Synchronization is done using internal lock
   val lock: Object = new Object()
 
@@ -174,7 +171,7 @@ class Thread extends Runnable {
 
   def fff = 1
 
-  def getPID: Option[pthread_t] = if(valid) Some(underlying) else None
+  def getPID: Option[pthread_t] = if(started) Some(underlying) else None
 
   final def checkAccess(): Unit = ()
 
@@ -205,7 +202,7 @@ class Thread extends Runnable {
   def getId: scala.Long = threadId
 
   def getPthreadId: pthread_t = {
-    if (started && valid)
+    if (started && started)
       underlying
     else throw new NullPointerException("Thread isn't started yet")
   }
@@ -214,7 +211,7 @@ class Thread extends Runnable {
     lock.synchronized {
       checkAccess()
       val status: Int =
-        if (valid) pthread_cancel(underlying) else 0
+        if (started) pthread_cancel(underlying) else 0
       if (status != 0)
         throw new InternalError("Pthread error " + status)
     }
@@ -323,7 +320,7 @@ class Thread extends Runnable {
     this.priority =
       if (priority > threadGroup.maxPriority) threadGroup.maxPriority
       else priority
-    if (valid) {
+    if (started) {
       val param: Ptr[sched_param] = stackalloc[sched_param]
       val policy: Ptr[CInt]       = stackalloc[CInt]
       pthread_getschedparam(underlying, policy, param)
@@ -405,7 +402,7 @@ class Thread extends Runnable {
     if (throwable == null)
       throw new NullPointerException("The argument is null!")
     lock.synchronized {
-      if (isAlive && valid) {
+      if (isAlive && started) {
         val status: Int = pthread_cancel(underlying)
         if (status != 0)
           throw new InternalError("Pthread error " + status)
@@ -440,28 +437,30 @@ class Thread extends Runnable {
 
 object Thread {
 
-  private final val THREAD_LIST = new mutable.HashMap[pthread_t, Thread]
+  import scala.collection.mutable.HashMap
 
-  private final val PTHREAD_DEFAULT_ATTR: Ptr[pthread_attr_t] = stackalloc[pthread_attr_t]
-  pthread_attr_init(PTHREAD_DEFAULT_ATTR)
-
-  private final val PTHREAD_DEFAULT_SCHED_PARAM: Ptr[sched_param] = stackalloc[sched_param]
-  pthread_attr_getschedparam(PTHREAD_DEFAULT_ATTR, PTHREAD_DEFAULT_SCHED_PARAM)
-
-  private final val PTHREAD_DEFAULT_POLICY: Ptr[CInt] = stackalloc[CInt]
-  pthread_attr_getschedpolicy(PTHREAD_DEFAULT_ATTR, PTHREAD_DEFAULT_POLICY)
+  private final val THREAD_LIST = new HashMap[pthread_t, Thread]
 
   private val lock: Object = new Object()
 
-  final val MAX_PRIORITY: Int = {
-    sched_get_priority_max(!PTHREAD_DEFAULT_POLICY)
-  }
+  /*private final val prios = {
+    val PTHREAD_DEFAULT_ATTR: Ptr[pthread_attr_t] = stackalloc[pthread_attr_t]
+    pthread_attr_init(PTHREAD_DEFAULT_ATTR)
 
-  final val MIN_PRIORITY: Int = {
-    sched_get_priority_min(!PTHREAD_DEFAULT_POLICY)
-  }
+    val PTHREAD_DEFAULT_SCHED_PARAM: Ptr[sched_param] = stackalloc[sched_param]
+    pthread_attr_getschedparam(PTHREAD_DEFAULT_ATTR, PTHREAD_DEFAULT_SCHED_PARAM)
 
-  final val NORM_PRIORITY: Int = !PTHREAD_DEFAULT_SCHED_PARAM._1
+    val PTHREAD_DEFAULT_POLICY: Ptr[CInt] = stackalloc[CInt]
+    pthread_attr_getschedpolicy(PTHREAD_DEFAULT_ATTR, PTHREAD_DEFAULT_POLICY)
+
+    (sched_get_priority_max(!PTHREAD_DEFAULT_POLICY), sched_get_priority_min(!PTHREAD_DEFAULT_POLICY), !PTHREAD_DEFAULT_SCHED_PARAM._1)
+  }*/
+
+  final val MAX_PRIORITY: Int = 0//prios._1
+
+  final val MIN_PRIORITY: Int = 0//prios._2
+
+  final val NORM_PRIORITY: Int = 0//prios._3
 
   final val STACK_TRACE_INDENT: String = "    "
 
