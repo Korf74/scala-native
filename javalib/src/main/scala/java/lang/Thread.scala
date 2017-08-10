@@ -13,6 +13,8 @@ import scala.scalanative.posix.sched._
 
 class Thread extends Runnable {
 
+
+
   //import java.lang.Thread._
 
   private var interruptedState = false
