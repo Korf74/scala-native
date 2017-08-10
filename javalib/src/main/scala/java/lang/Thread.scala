@@ -12,9 +12,7 @@ import scala.scalanative.posix.sched._
 // Ported from Harmony
 
 class Thread extends Runnable {
-
-
-
+  
   //import java.lang.Thread._
 
   private var interruptedState = false
