@@ -416,7 +416,7 @@ class ForkJoinPool(parallelism: Int, val factory: ForkJoinPool.ForkJoinWorkerThr
             v.eventCount = (e + E_SEQ) & E_MASK
             p = v.parker
             if(p != null)
-              U.unpark(p)
+              //U.unpark(p)
             break = true
           }
         } else {
@@ -593,7 +593,7 @@ class ForkJoinPool(parallelism: Int, val factory: ForkJoinPool.ForkJoinWorkerThr
             w.eventCount = (e + E_SEQ) & E_MASK
             p = w.parker
             if(p != null)
-              U.unpark(p)
+              //U.unpark(p)
             break = true
           }
           if(q.top - q.base <= 0 && !break)
@@ -636,10 +636,11 @@ class ForkJoinPool(parallelism: Int, val factory: ForkJoinPool.ForkJoinWorkerThr
       do {
         val q: WorkQueue = ws((r + j) & m)
         val b: Int = q.base
+        //volatile
         val a: Array[ForkJoinTask[_]] = q.array
         if(q != null && b - q.top < 0 && a != null) { // probably nonempty
           val i: Int = (((a.length - 1) & b) << ASHIFT) + ABASE
-          val t: ForkJoinTask[_] = U.getObjectVolatile(a, i).asInstanceOf[ForkJoinTask[_]]
+          val t: ForkJoinTask[_] = a(i)
           if(q.base == b && ec >= 0 && t != null && U.compareAndSwapObject(a, i, t, null)) {
             if((q.base = b + 1) - q.top < 0)
               signalWork(q)
@@ -687,7 +688,7 @@ class ForkJoinPool(parallelism: Int, val factory: ForkJoinPool.ForkJoinWorkerThr
               U.putObject(wt, PARKBLOCKET, this)
               w.parker = wt // emulate LockSupport.park
               if(w.eventCount < 0) // recheck
-                U.park(false, 0L) // block
+                //U.park(false, 0L) // block
               w.parker = null
               U.putObject(wt, PARKBLOCKER, null)
             }
@@ -723,7 +724,7 @@ class ForkJoinPool(parallelism: Int, val factory: ForkJoinPool.ForkJoinWorkerThr
                 p = v.parker
 
                 if (p != null)
-                  U.unpark(p)
+                  //U.unpark(p)
                 n -= 1
                 if (n <= 0)
                   break = true
@@ -750,7 +751,7 @@ class ForkJoinPool(parallelism: Int, val factory: ForkJoinPool.ForkJoinWorkerThr
         U.putObject(wt, PARKBLOCKER, this)
         w.parker = wt
         if(ctl == currentCtl)
-          U.park(false, parkTime)
+          //U.park(false, parkTime)
         w.parker = null
         U.putObject(wt, PARKBLOCKER, null)
         if(ctl != currentCtl)
@@ -807,7 +808,7 @@ class ForkJoinPool(parallelism: Int, val factory: ForkJoinPool.ForkJoinWorkerThr
             w.eventCount = (e + E_SEQ) & E_MASK
             p = w.parker
             if(p != null)
-              U.unpark(p)
+              //U.unpark(p)
             n -= 1
             if(n <= 0)
               breakInner = true
@@ -860,6 +861,7 @@ class ForkJoinPool(parallelism: Int, val factory: ForkJoinPool.ForkJoinWorkerThr
             }
           }
           while(!break && continueRestart && !breakRestart) { // help stealer or descend to its stealer
+            // volatile
             var a: Array[ForkJoinTask] = _
             var b: Int = 0
             if(subtask.status < 0) // consistency checks
@@ -868,7 +870,7 @@ class ForkJoinPool(parallelism: Int, val factory: ForkJoinPool.ForkJoinWorkerThr
             a = v.array
             if(b < 0 && a != null && continueRestart) {
               val i: Int = (((s.length - 1) & b) << ASHIFT) + ABASE
-              val t: ForkJoinTask[_] = U.getObjetVolatile(a, i).asInstanceOf[ForkJoinTask[_]]
+              val t: ForkJoinTask[_] = a(i)
               if(subtask.status < 0 || j.currentJoin != subtask || v.currentSteal != subtask)
                 continueRestart = true // stale
                   stat = 1 // apparent progress
@@ -955,7 +957,7 @@ class ForkJoinPool(parallelism: Int, val factory: ForkJoinPool.ForkJoinWorkerThr
           w.eventCount = (e + E_SEQ) & E_MASK
           p = w.parker
           if (p != null)
-            U.unpark(p)
+            //U.unpark(p)
           return true // replace with idle worker
         }
       }
@@ -1215,7 +1217,7 @@ class ForkJoinPool(parallelism: Int, val factory: ForkJoinPool.ForkJoinWorkerThr
                         case ignore: Throwable =>
                       }
                     }
-                    U.unpark(wt)
+                    //U.unpark(wt)
                   }
                 }
               }
@@ -1234,8 +1236,9 @@ class ForkJoinPool(parallelism: Int, val factory: ForkJoinPool.ForkJoinWorkerThr
                 w.eventCount = (e + E_SEQ) & E_MASK
                 w.qlock = -1
                 p = w.parker
-                if(p != null)
-                  U.unpark(p)
+                if(p != null) {
+                  //U.unpark(p)
+                }
               }
             }
           }
@@ -1710,13 +1713,14 @@ object ForkJoinPool {
     }
 
     def isEmpty: Boolean = {
+      // volatile
       var a: Array[ForkJoinTask[_]] = null
       var m: Int = 0
       var s: Int = top
       val n: Int = base - s
       a = array
       m = a.length
-      n >= 0 || (n == -1 && (a == null || m < 0 || U.getObject(a, ((m & (s - 1)) << ASHIFT).toLong + ABASE) == null))
+      n >= 0 || (n == -1 && (a == null || m < 0 || a(((m & (s - 1)) << ASHIFT).toLong + ABASE) == null))
     }
 
     def push(task: Nothing): Unit = {
@@ -1739,6 +1743,7 @@ object ForkJoinPool {
     }
 
     def growArray: Array[ForkJoinTask[_]] = {
+      //volatile
       val oldA: Array[ForkJoinTask[_]] = array
       val size: Int = if (oldA != null) oldA.length << 1
       else INITIAL_QUEUE_CAPACITY
@@ -1758,7 +1763,7 @@ object ForkJoinPool {
           var x: ForkJoinTask[_] = null
           val oldj: Int = ((b & oldMask) << ASHIFT) + ABASE
           val j: Int = ((b & mask) << ASHIFT) + ABASE
-          x = U.getObjectVolatile(oldA, oldj).asInstanceOf[ForkJoinTask[_]]
+          x = oldA(oldj)
           if (x != null && U.compareAndSwapObject(oldA, oldj, x, null)) U.putObjectVolatile(a, j, x)
           b += 1
         } while (b != t)
@@ -1767,6 +1772,7 @@ object ForkJoinPool {
     }
 
     def pop: ForkJoinTask[_] = {
+      //volatile
       var a: Array[ForkJoinTask[_]] = null
       var t: Array[ForkJoinTask[_]] = null
       var m: Int = 0
@@ -1777,7 +1783,8 @@ object ForkJoinPool {
         var break: Boolean = false
         while (s >= 0 && !break) {
           val j: Long = ((m & s) << ASHIFT) + ABASE
-          if ((t = U.getObject(a, j).asInstanceOf[ForkJoinTask[_]]) == null)
+          t = a(j)
+          if (t == null)
             break = true
           if (U.compareAndSwapObject(a, j, t, null) && !break) {
             top = s
@@ -1791,11 +1798,13 @@ object ForkJoinPool {
 
     def pollAt(b: Int): ForkJoinTask[_] = {
       var t: ForkJoinTask[_] = null
+      //volatile
       var a: Array[ForkJoinTask[_]] = null
       a = array
       if (a != null) {
         val j: Int = (((a.length - 1) & b) << ASHIFT) + ABASE
-        if ((t = U.getObjectVolatile(a, j).asInstanceOf[Nothing]) != null && (base == b) && U.compareAndSwapObject(a, j, t, null)) {
+        t = a(j)
+        if (t != null && (base == b) && U.compareAndSwapObject(a, j, t, null)) {
           base = b + 1
           return t
         }
@@ -1804,13 +1813,14 @@ object ForkJoinPool {
     }
 
     def poll: ForkJoinTask[_] = {
+      // volatile
       var a: Array[ForkJoinTask[_]] = array
       var b: Int = base
       var t: ForkJoinTask[_] = null
       var break: Boolean = false
       while (b - top < 0 && a != null && !break) {
         val j = (((a.length - 1) & b) << ASHIFT) + ABASE
-        t = U.getObjectVolatile(a, j).asInstanceOf[Nothing]
+        t = a(j)
         if (t != null) {
           if ((base == b) && U.compareAndSwapObject(a, j, t, null)) {
             base = b + 1
@@ -1839,6 +1849,7 @@ object ForkJoinPool {
     }
 
     def peek: ForkJoinTask[_] = {
+      //volatile
       val a: Array[ForkJoinTask[_]] = array
       var m: Int = 0
       m = a.length - 1
@@ -1846,7 +1857,7 @@ object ForkJoinPool {
       val i = if (mode == 0) top - 1
       else base
       val j = ((i & m) << ASHIFT) + ABASE
-      U.getObjectVolatile(a, j).asInstanceOf[ForkJoinTask[_]]
+      a(j)
     }
 
     def tryUnpush(t: ForkJoinTask[_]): Boolean = {
@@ -1885,11 +1896,12 @@ object ForkJoinPool {
 
     private def popAndExecAll() = {
       // A bit faster than repeated pop calls
+      // volatile
       var a: Array[ForkJoinTask[_]] = array
       var m: Int = a.length - 1
       var s: Int = top - 1
       var j: Long = ((m & s) << ASHIFT) + ABASE
-      var t: ForkJoinTask[_] = U.getObject(a, j)
+      var t: ForkJoinTask[_] = a(j)
       while (a != null && m >= 0 && s - base >= 0 && t != null) {
         if (U.compareAndSwapObject(a, j, t, null)) {
           top = s
@@ -1899,7 +1911,7 @@ object ForkJoinPool {
         m = a.length - 1
         s = top - 1
         j = ((m & s) << ASHIFT) + ABASE
-        t = U.getObject(a, j)
+        t = a(j)
       }
     }
 
