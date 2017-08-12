@@ -32,14 +32,15 @@ class Thread extends Runnable {
   // Thread's priority
   private var priority: Int = _
 
-  // Stack size to be passes to VM for thread execution //TODO ???
+  // Stack size to be passes to VM for thread execution
+  // Note: not implemented since not on VM
   private var stackSize: scala.Long = 0L
 
   // Indicates if the thread was already started
   var started: scala.Boolean = false
 
   // Indicates if the thread is alive
-  // Note : this was originally named 'isAlive' in Harmony but
+  // Note: this was originally named 'isAlive' in Harmony but
   // conflicted with the 'isAlive' method
   var alive: scala.Boolean = false
 
@@ -53,6 +54,10 @@ class Thread extends Runnable {
   private var threadId: scala.Long = _
 
   // The underlying pthread ID
+  /*
+   * NOTE: This is used to keep track of the pthread linked to this Thread,
+   * it might be easier/better to handle this at lower level
+   */
   private var underlying: pthread_t = 0.asInstanceOf[ULong]
 
   // Synchronization is done using internal lock
@@ -156,22 +161,7 @@ class Thread extends Runnable {
 
   def this(group: ThreadGroup, name: String) = this(group, null, name, 0)
 
-  // TODO
-  override def equals(o: Any): scala.Boolean = {
-    if(!super.equals(o) || !o.isInstanceOf[Thread]) return false
-
-    val t: Thread = o.asInstanceOf[Thread]
-    t.getPID == getPID && t.getId == threadId
-  }
-
-  // TODO
-  override def hashCode(): Int = {
-    getPID.hashCode()
-  }
-
-  def fff = 1
-
-  def getPID: Option[pthread_t] = if(started) Some(underlying) else None
+  private[Thread] def getPID: Option[pthread_t] = if(started) Some(underlying) else None
 
   final def checkAccess(): Unit = ()
 
@@ -190,22 +180,9 @@ class Thread extends Runnable {
 
   final def getPriority: Int = priority
 
-  def getStackTrace: Array[StackTraceElement] = {
-    /* // TODO a revoir
-    val ste: Array[StackTraceElement] = VMStack.getThreadStackTrace(this)
-    if(ste != null) ste else */
-    new Array[StackTraceElement](0)
-  }
-
   final def getThreadGroup: ThreadGroup = group
 
   def getId: scala.Long = threadId
-
-  def getPthreadId: pthread_t = {
-    if (started && started)
-      underlying
-    else throw new NullPointerException("Thread isn't started yet")
-  }
 
   def interrupt(): Unit = {
     lock.synchronized {
@@ -221,7 +198,6 @@ class Thread extends Runnable {
 
   final def isDaemon: scala.Boolean = daemon
 
-  // TODO check
   def isInterrupted: scala.Boolean = interruptedState
 
   //synchronized
@@ -279,10 +255,9 @@ class Thread extends Runnable {
       throw new InternalError("Thread Manager internal error " + status)*/
   }
 
-  private def toCRoutine(
-      f: => (() => Unit)): (Ptr[scala.Byte]) => Ptr[scala.Byte] = {
+  private def toCRoutine(f: => (() => Unit)): (Ptr[scala.Byte]) => Ptr[scala.Byte] = {
     def g(ptr: Ptr[scala.Byte]) = {
-      f()
+      f
       null.asInstanceOf[Ptr[scala.Byte]]
     }
     g
