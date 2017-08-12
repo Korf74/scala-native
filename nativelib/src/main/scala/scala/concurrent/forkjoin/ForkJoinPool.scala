@@ -756,7 +756,7 @@ class ForkJoinPool(parallelism: Int, val factory: ForkJoinPool.ForkJoinWorkerThr
         U.putObject(wt, PARKBLOCKER, null)
         if(ctl != currentCtl)
           break = true
-        if(deadline - System.nanoTime() <= 0L && U.comapreAndSwapLong(this, CTL, currentCtl, prevCtl) && !break) {
+        if(deadline - System.nanoTime() <= 0L && ctl.compareAndSwap(currentCtl, prevCtl) && !break) {
           w.eventCount = (w.eventCount + E_SEQ) | E_MASK
           w.hint = -1
           w.qlock = -1 // shrink
@@ -1271,7 +1271,7 @@ class ForkJoinPool(parallelism: Int, val factory: ForkJoinPool.ForkJoinWorkerThr
     if(task == null)
       throw new NullPointerException()
     var job: ForkJoinTask[_] = null
-    if(task.isInstanceOf[ForkJoinTask[_]]) // avoir re-wrap
+    if(task.isInstanceOf[ForkJoinTask[_]]) // avoid re-wrap
       job = task.asInstanceOf[ForkJoinTask[_]]
     else
       job = new ForkJoinTask.AdaptedRunnableAction(task)
