@@ -161,7 +161,7 @@ class Thread extends Runnable {
 
   def this(group: ThreadGroup, name: String) = this(group, null, name, 0)
 
-  private[Thread] def getPID: Option[pthread_t] = if(started) Some(underlying) else None
+  def getPID: Option[pthread_t] = if(started) Some(underlying) else None
 
   final def checkAccess(): Unit = ()
 
