@@ -3,6 +3,8 @@ package java.lang
 import java.util
 import java.lang.Thread._
 
+import scala.scalanative.runtime.Unsafe
+import scala.scalanative.runtime.NativeThread
 import scala.scalanative.native.{CFunctionPtr, CFunctionPtr1, CInt, Ptr, ULong, stackalloc}
 import scala.scalanative.posix.sys.types.{pthread_attr_t, pthread_t}
 import scala.scalanative.posix.pthread._
@@ -12,8 +14,6 @@ import scala.scalanative.posix.sched._
 // Ported from Harmony
 
 class Thread extends Runnable {
-  
-  //import java.lang.Thread._
 
   private var interruptedState = false
 
@@ -34,7 +34,7 @@ class Thread extends Runnable {
 
   // Stack size to be passes to VM for thread execution
   // Note: not implemented since not on VM
-  private var stackSize: scala.Long = 0L
+  private var stackSize: scala.Long = NativeThread.THREAD_DEFAULT_STACK_SIZE
 
   // Indicates if the thread was already started
   var started: scala.Boolean = false
@@ -58,7 +58,7 @@ class Thread extends Runnable {
    * NOTE: This is used to keep track of the pthread linked to this Thread,
    * it might be easier/better to handle this at lower level
    */
-  private var underlying: pthread_t = 0.asInstanceOf[ULong]
+  private[this] var underlying: pthread_t = 0.asInstanceOf[ULong]
 
   // Synchronization is done using internal lock
   val lock: Object = new Object()
@@ -161,8 +161,6 @@ class Thread extends Runnable {
 
   def this(group: ThreadGroup, name: String) = this(group, null, name, 0)
 
-  def getPID: Option[pthread_t] = if(started) Some(underlying) else None
-
   final def checkAccess(): Unit = ()
 
   @deprecated
@@ -249,10 +247,9 @@ class Thread extends Runnable {
 
   @deprecated
   final def resume(): Unit = {
-    /*checkAccess()
-    val status: Int = VMThreadManager.resume(this)
-    if(status != VMThreadManager.TM_ERROR_NONE)
-      throw new InternalError("Thread Manager internal error " + status)*/
+    checkAccess()
+    if(started && Unsafe.NativeUnsafe.thd_continue(underlying) != 0)
+      throw new RuntimeException("Error while trying to unpark thread " + toString)
   }
 
   private def toCRoutine(f: => (() => Unit)): (Ptr[scala.Byte]) => Ptr[scala.Byte] = {
@@ -268,6 +265,8 @@ class Thread extends Runnable {
       target.run()
     }
   }
+
+  def getStackTrace: Array[StackTraceElement] = new Array[StackTraceElement](0)
 
   def setContextClassLoader(classLoader: ClassLoader): Unit =
     lock.synchronized(contextClassLoader = classLoader)
@@ -295,13 +294,8 @@ class Thread extends Runnable {
     this.priority =
       if (priority > threadGroup.maxPriority) threadGroup.maxPriority
       else priority
-    if (started) {
-      val param: Ptr[sched_param] = stackalloc[sched_param]
-      val policy: Ptr[CInt]       = stackalloc[CInt]
-      pthread_getschedparam(underlying, policy, param)
-      !param._1 = priority
-      pthread_setschedparam(underlying, !policy, param)
-    }
+    if (started)
+      NativeThread.setPriority(underlying, priority)
   }
 
   //synchronized
@@ -386,7 +380,11 @@ class Thread extends Runnable {
   }
 
   @deprecated
-  final def suspend(): Unit = {}
+  final def suspend(): Unit = {
+    checkAccess()
+    if(started && Unsafe.NativeUnsafe.thd_suspend(underlying) != 0)
+      throw new RuntimeException("Error while trying to park thread " + toString)
+  }
 
   override def toString: String = {
     val threadGroup: ThreadGroup = group
@@ -418,24 +416,11 @@ object Thread {
 
   private val lock: Object = new Object()
 
-  /*private final val prios = {
-    val PTHREAD_DEFAULT_ATTR: Ptr[pthread_attr_t] = stackalloc[pthread_attr_t]
-    pthread_attr_init(PTHREAD_DEFAULT_ATTR)
+  final val MAX_PRIORITY: Int = NativeThread.THREAD_MAX_PRIORITY
 
-    val PTHREAD_DEFAULT_SCHED_PARAM: Ptr[sched_param] = stackalloc[sched_param]
-    pthread_attr_getschedparam(PTHREAD_DEFAULT_ATTR, PTHREAD_DEFAULT_SCHED_PARAM)
+  final val MIN_PRIORITY: Int = NativeThread.THREAD_MIN_PRIORITY
 
-    val PTHREAD_DEFAULT_POLICY: Ptr[CInt] = stackalloc[CInt]
-    pthread_attr_getschedpolicy(PTHREAD_DEFAULT_ATTR, PTHREAD_DEFAULT_POLICY)
-
-    (sched_get_priority_max(!PTHREAD_DEFAULT_POLICY), sched_get_priority_min(!PTHREAD_DEFAULT_POLICY), !PTHREAD_DEFAULT_SCHED_PARAM._1)
-  }*/
-
-  final val MAX_PRIORITY: Int = 0//prios._1
-
-  final val MIN_PRIORITY: Int = 0//prios._2
-
-  final val NORM_PRIORITY: Int = 0//prios._3
+  final val NORM_PRIORITY: Int = NativeThread.THREAD_NORM_PRIORITY
 
   final val STACK_TRACE_INDENT: String = "    "
 
@@ -492,7 +477,6 @@ object Thread {
   }
 
   def `yield`(): Unit = {
-    //TODO I'm not sure if that's okay
     sched_yield()
   }
 

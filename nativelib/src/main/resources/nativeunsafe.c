@@ -2,6 +2,8 @@
 #include <pthread.h>
 #include <sched.h>
 #include <signal.h>
+#include <stdlib.h>
+#include <stdio.h>
 
 typedef uintptr_t word_t;
 typedef word_t* Field_t;
@@ -110,11 +112,11 @@ suspend_init_routine (void)
 
     status = sigaction (SIGUSR1, &sigusr1, NULL);
     if (status == -1)
-        errno_abort ("Installing suspend handler");
+        perror("Installing suspend handler");
 
     status = sigaction (SIGUSR2, &sigusr2, NULL);
     if (status == -1)
-        errno_abort ("Installing resume handler");
+        perror("Installing resume handler");
 
     inited = 1;
     return;
@@ -175,7 +177,7 @@ thd_suspend (pthread_t target_thread)
             array, (++bottom * sizeof (pthread_t)));
         if (array == NULL) {
             pthread_mutex_unlock (&mut);
-            return errno;
+            perror("Null pointer");
         }
 
         array[bottom] = null_pthread;   /* Clear new entry */

@@ -8,7 +8,8 @@ import scala.scalanative.native.{
   CSize,
   Ptr,
   extern,
-  name
+  name,
+  link
 }
 import scala.scalanative.posix.sched.sched_param
 import scala.scalanative.posix.sys.time.timespec
@@ -17,6 +18,7 @@ import scala.scalanative.posix.sys.types._
 // SUSv2 version is used for compatibility
 // see http://pubs.opengroup.org/onlinepubs/007908799/xsh/threads.html
 
+@link("pthread")
 @extern
 object pthread {
 
