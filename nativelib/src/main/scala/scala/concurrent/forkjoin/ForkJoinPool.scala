@@ -52,7 +52,7 @@ abstract class CountedCompleter[T] protected extends ForkJoinTask[T] {
     do {c = pending} while (!pending.compareAndSwapStrong(c, c + delta))
   }
 
-  final def comapreAndSetPendingCount(expected: Int, count: Int): Boolean = {
+  final def compareAndSetPendingCount(expected: Int, count: Int): Boolean = {
     pending.compareAndSwapStrong(expected, count)
   }
 
@@ -2043,20 +2043,6 @@ object ForkJoinPool {
 
   }
 
-  // static fields (initialized in static initializer)
-
-  final var defaultForkJoinWorkerThreadFactory: ForkJoinWorkerThreadFactory = _
-
-  final var submitters: ThreadLocal[Submitter] = _
-
-  private final var modifyThreadPermission: RuntimePermission = _
-
-  final var common: ForkJoinPool = null
-
-  final var commonParallelism: Int = 0
-
-  private var poolNumberSequence: Int = 0
-
   // synchronized
   private final def nextPoolId: Int = {
     poolNumberSequence += 1
@@ -2130,6 +2116,37 @@ object ForkJoinPool {
   private final val MIN_SCAN = 0x1ff // cover estimation slop
 
   private final val MAX_SCAN = 0x1ffff // 4 * max workers
+
+  final var defaultForkJoinWorkerThreadFactory: ForkJoinWorkerThreadFactory = _
+
+  final val submitters: ThreadLocal[Submitter] = new ThreadLocal[Submitter]
+
+  val defaultForkJoinWorkerThreadFactory: ForkJoinWorkerThreadFactory = new DefaultForkJoinWorkerThreadFactory()
+
+  val fac: ForkJoinWorkerThreadFactory = defaultForkJoinWorkerThreadFactory
+
+  private final val modifyThreadPermission: RuntimePermission = new RuntimePermission("modifyThread")
+
+  final val par: Int = {
+    var pp = Integer.parseInt(System.getProperty("java.util.concurrent.ForkJoinPool.common.parallelism"))
+    if (pp <= 0)
+      pp = Runtime.getRuntime.availableProcessors()
+    if(pp > MAX_CAP)
+      pp = MAX_CAP
+    pp
+  }
+
+  val handler: Thread.UncaughtExceptionHandler = null
+
+  // precompute ctl
+  val np: Long = (-par).toLong
+  val ct: Long = ((np << AC_SHIFT) & AC_MASK) | ((np << TC_SHIFT) & TC_MASK)
+
+  final val common: ForkJoinPool = new ForkJoinPool(par, ct, fac, handler)
+
+  final val commonParallelism: Int = par
+
+  private var poolNumberSequence: Int = 0
 
   def getSurplusQueuedTaskCount: Int = {
     val t: Thread = Thread.currentThread()
