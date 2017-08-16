@@ -1,5 +1,8 @@
 package scala.scalanative
-package runtime.Unsafe
+package runtime
+
+import native.{extern, name, CInt}
+import posix.sys.types.pthread_t
 
 object Unsafe {
 
@@ -8,9 +11,9 @@ object Unsafe {
   private val lock: Object = new Object()
 
   def compareAndSwapObject(obj: Object, expected: Object, update: Object): Boolean = lock.synchronized {
-    if(expected != obj) return false
+    if (!expected.equals(update)) return false
 
-    update_object(obj, update)
+    updateObject(obj, update)
     true
   }
 
@@ -18,4 +21,11 @@ object Unsafe {
 
   def unpark(thread: Thread): Unit = thread.resume()
 
+  @extern
+  private object NativeUnsafe {
+
+    @name("update_object")
+    def updateObject(obj: Object, update: Object): Unit = extern
+
+  }
 }

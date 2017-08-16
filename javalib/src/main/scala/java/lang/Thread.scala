@@ -3,7 +3,6 @@ package java.lang
 import java.util
 import java.lang.Thread._
 
-import scala.scalanative.runtime.Unsafe
 import scala.scalanative.runtime.NativeThread
 import scala.scalanative.native.{CFunctionPtr, CFunctionPtr1, CInt, Ptr, ULong, stackalloc}
 import scala.scalanative.posix.sys.types.{pthread_attr_t, pthread_t}
@@ -248,7 +247,7 @@ class Thread extends Runnable {
   @deprecated
   final def resume(): Unit = {
     checkAccess()
-    if(started && Unsafe.NativeUnsafe.thd_continue(underlying) != 0)
+    if(started && NativeThread.resume(underlying) != 0)
       throw new RuntimeException("Error while trying to unpark thread " + toString)
   }
 
@@ -382,7 +381,7 @@ class Thread extends Runnable {
   @deprecated
   final def suspend(): Unit = {
     checkAccess()
-    if(started && Unsafe.NativeUnsafe.thd_suspend(underlying) != 0)
+    if(started && NativeThread.suspend(underlying) != 0)
       throw new RuntimeException("Error while trying to park thread " + toString)
   }
 
@@ -412,7 +411,7 @@ object Thread {
 
   import scala.collection.mutable.HashMap
 
-  private final val THREAD_LIST = new HashMap[pthread_t, Thread]
+  private final val THREAD_LIST = new HashMap[pthread_t, Thread]()
 
   private val lock: Object = new Object()
 

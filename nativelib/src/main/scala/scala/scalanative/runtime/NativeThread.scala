@@ -22,4 +22,10 @@ object NativeThread {
   @name("set_priority")
   def setPriority(thread: pthread_t, priority: CInt): Unit = extern
 
+  @name("thd_continue")
+  def resume(thread: pthread_t): CInt = extern
+
+  @name("thd_suspend")
+  def suspend(thread: pthread_t): CInt = extern
+
 }
