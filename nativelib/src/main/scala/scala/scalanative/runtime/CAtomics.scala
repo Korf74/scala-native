@@ -974,4 +974,15 @@ object CAtomicCSize extends CAtomic {
 
 }
 
+class CAtomicRef[T <: AnyRef](default: T = 0L.asInstanceOf[T])
+  extends CAtomicLong(0L) {}
+
+object CAtomicRef extends CAtomic {
+
+  def apply[T <: AnyRef](initValue: T) = new CAtomicRef[T](initValue)
+
+  def apply[T <: AnyRef]() = new CAtomicRef[T]()
+
+}
+
 // ###sourceLocation(file: "/home/remi/perso/Projects/scala-native/nativelib/src/main/scala/scala/scalanative/runtime/CAtomics.scala.gyb", line: 112)

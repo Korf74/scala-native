@@ -10,7 +10,7 @@ import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.RunnableFuture
 import java.util.concurrent.TimeUnit
 
-import scalanative.runtime.{CAtomicInt, CAtomicLong}
+import scalanative.runtime.{CAtomicInt, CAtomicLong, CAtomicRef}
 
 abstract class CountedCompleter[T] protected extends ForkJoinTask[T] {
 
