@@ -45,9 +45,11 @@ object Atomic {
   def init_${N}(atm: ${C}, initValue: ${T}): Unit = extern
   % end
 
-  // Load
+  // Load/Store
   % for (C, T, N) in zip(classes, types, names):
   def load_${N}(ptr: ${C}): ${T} = extern
+
+  def store_${N}(ptr: ${C}, value: ${T}): Unit = extern
   % end
 
   // Compare and Swap

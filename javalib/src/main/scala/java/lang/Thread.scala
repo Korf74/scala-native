@@ -1,7 +1,11 @@
 package java.lang
 
+import scala.scalanative.runtime.CAtomicRef
+
 class Thread private (runnable: Runnable) extends Runnable {
   if (runnable ne Thread.MainRunnable) ???
+
+  val parkBlocker: CAtomicRef[Object] = CAtomicRef[Object](new Object())
 
   private var interruptedState   = false
   private[this] var name: String = "main" // default name of the main thread

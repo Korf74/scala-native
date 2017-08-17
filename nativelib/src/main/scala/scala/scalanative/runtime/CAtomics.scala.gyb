@@ -35,7 +35,7 @@ class CAtomic${C}(default: ${T} = ${default}) extends CAtomic {
 
   def load(): ${T} = load_${N}(atm)
 
-  def store(value: ${T}): Unit = init_${N}(atm, value)
+  def store(value: ${T}): Unit = store_${N}(atm, value)
 
   def free(): Unit = Atomic.free(atm${castB})
 
@@ -98,6 +98,11 @@ class CAtomic${C}(default: ${T} = ${default}) extends CAtomic {
 
   override def toString: String = load().toString
 
+  override def equals(that: Any): Boolean = that match {
+    case o: ${T} => o equals load()
+    case _ => false
+  }
+
 }
 
 object CAtomic${C} extends CAtomic {
@@ -107,6 +112,16 @@ object CAtomic${C} extends CAtomic {
   def apply() = new CAtomic${C}()
 
 }
-
 % end
+
+class CAtomicRef[T <: AnyRef](default: T = 0L.asInstanceOf[T])
+  extends CAtomicLong(0L) {}
+
+object CAtomicRef extends CAtomic {
+
+  def apply[T <: AnyRef](initValue: T) = new CAtomicRef[T](initValue)
+
+  def apply[T <: AnyRef]() = new CAtomicRef[T]()
+
+}
 

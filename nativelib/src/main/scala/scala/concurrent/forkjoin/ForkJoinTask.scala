@@ -27,23 +27,20 @@ abstract class ForkJoinTask[V] extends Future[V] with Serializable {
   // volatile
   var status = CAtomicInt() // accessed directly by pool and workers
 
-  // implicit methods for ease of use of atomics
-  private implicit def cas[T](t: (Boolean, T)): Boolean = t._1
-  private implicit def load(a: CAtomicInt): Int = a.load()
-  private implicit def load(a: CAtomicLong): Long = a.load()
-
   private def setCompletion(completion: Int): Int = {
-    var s: Int = _
+    var s: Int = 0
     while(true) {
       s = status
       if(s < 0)
         return s
-      if(U.comapreAndSwapInt(this, STATUS, s, s | completion)) {
+      if(status.compareAndSwapStrong(s, s | completion)) {
         if((s >>> 16) != 0)
           this.synchronized(notifyAll())
         completion
       }
     }
+    // for the compiler
+    0
   }
 
   final def doExec: Int = {
@@ -129,13 +126,13 @@ abstract class ForkJoinTask[V] extends Future[V] with Serializable {
 
   private def doInvoke(): Int = {
     var s: Int = doExec
-    var t: Thread = Thread.currentThread()
-    var wt: ForkJoinWorkerThread = t.asInstanceOf[ForkJoinWorkerThread]
-    if ((s = doExec) < 0)
+    var t: Thread = null
+    var wt: ForkJoinWorkerThread = null
+    if (s < 0)
       s
     else {
-      if ((t = Thread.currentThread).isInstanceOf[Nothing])
-        (wt = t.asInstanceOf[Nothing]).pool.awaitJoin(wt.workQueue, this)
+      if ({t = Thread.currentThread; t}.isInstanceOf[ForkJoinWorkerThread])
+        {wt = t.asInstanceOf[ForkJoinWorkerThread]; wt}.pool.awaitJoin(wt.workQueue, this)
       else externalAwaitDone
     }
   }
@@ -205,7 +202,7 @@ abstract class ForkJoinTask[V] extends Future[V] with Serializable {
         }
       }
       expungeStaleExceptions()
-      status = 0
+      status.store(0)
     } finally {
       lock.unlock()
     }
@@ -215,19 +212,19 @@ abstract class ForkJoinTask[V] extends Future[V] with Serializable {
     if((status & DONE_MASK) != EXCEPTIONAL)
       return null
     val h: Int = System.identityHashCode(this)
-    var e: ExceptionNode = _
+    var e: ExceptionNode = null
     val lock: ReentrantLock = exceptionTableLock
     lock.lock()
     try {
       expungeStaleExceptions()
-      var r: Array[ExceptionNode] = exceptionTable
+      var t: Array[ExceptionNode] = exceptionTable
       e = t(h & (t.length - 1))
       while(e != null && e.get() != this)
         e = e.next
     } finally {
       lock.unlock()
     }
-    var ex: Throwable = e.ex
+    val ex: Throwable = e.ex
     if(e == null || ex == null)
       return null
     if(false && e.thrower != Thread.currentThread().getId) {
@@ -239,14 +236,14 @@ abstract class ForkJoinTask[V] extends Future[V] with Serializable {
         while(i < cs.length) {
           val c: Constructor[_] = cs(i)
           val ps: Array[Class[_]] = c.getParameterTypes
-          if(ps.length == 1 && ps(0) == Throwable.getClass)
+          if(ps.length == 1 && ps(0) == classOf[Throwable])
             return c.newInstance(ex).asInstanceOf[Throwable]
           i += 1
         }
         if(noArgCtor != null) {
           val wx: Throwable = noArgCtor.newInstance().asInstanceOf[Throwable]
           wx.initCause(ex)
-          wx
+          return wx
         }
       } catch {
         case ignore: Exception =>
@@ -311,8 +308,7 @@ abstract class ForkJoinTask[V] extends Future[V] with Serializable {
   }
 
   def completeExceptionally(ex: Throwable): Unit = {
-    setExceptionalCompletion(ex.isInstanceOf[RuntimeException] ||
-      (if(ex.isInstanceOf[Error]) ex else new RuntimeException(ex)))
+    setExceptionalCompletion(if(ex.isInstanceOf[RuntimeException] || ex.isInstanceOf[Error]) ex else new RuntimeException(ex))
   }
 
   def complete(value: V): Unit = {
@@ -336,7 +332,7 @@ abstract class ForkJoinTask[V] extends Future[V] with Serializable {
         doJoin()
       else externalInterruptibleAwaitDone
     }
-    var ex: Throwable = _
+    var ex: Throwable = null
     s &= DONE_MASK
     if(s == CANCELLED)
       throw new CancellationException()
@@ -351,7 +347,7 @@ abstract class ForkJoinTask[V] extends Future[V] with Serializable {
       throw new InterruptedException()
     // Messy in part because we measure in nanosecs, but wait in millisecs
     var s: Int = status
-    var ms: Long = _
+    var ms: Long = 0L
     var ns: Long = unit.toNanos(timeout)
     if(s >= 0 && ns > 0L) {
       val deadline: Long = System.nanoTime() + ns
@@ -411,7 +407,7 @@ abstract class ForkJoinTask[V] extends Future[V] with Serializable {
     }
     s &= DONE_MASK
     if(s != NORMAL) {
-      var ex: Throwable = _
+      var ex: Throwable = null
       if(s == CANCELLED)
         throw new CancellationException()
       if(s != EXCEPTIONAL)
@@ -431,7 +427,7 @@ abstract class ForkJoinTask[V] extends Future[V] with Serializable {
     if((status & DONE_MASK) == EXCEPTIONAL)
       clearExceptionalCompletion()
     else
-      status = 0
+      status.store(0)
   }
 
   def tryUnfork: Boolean = {
@@ -454,7 +450,7 @@ abstract class ForkJoinTask[V] extends Future[V] with Serializable {
   final def getForkJoinTaskTag: Short = status toShort
 
   final def setForkJoinTaskTag(tag: Short) = {
-    var s: Int = _
+    var s: Int = 0
     while(true) {
       s = status
       if(status.compareAndSwapStrong(s, (s & ~SMASK) | (tag & SMASK)))
@@ -463,14 +459,16 @@ abstract class ForkJoinTask[V] extends Future[V] with Serializable {
   }
 
   final def compareAndSetForkJoinTaskTag(e: Short, tag: Short): Boolean = {
-    var s: Int = _
+    var s: Int = 0
     while(true) {
       s = status
       if(s.toShort != e)
         return false
       if(status.compareAndSwapStrong(s, (s & ~SMASK) | (tag & SMASK)))
-        true
+        return true
     }
+    // for the compiler
+    false
   }
 
   private def writeObject(s: java.io.ObjectOutputStream): Unit = {
@@ -514,10 +512,19 @@ object ForkJoinTask {
     */
   private final val EXCEPTION_MAP_CAPACITY: Int = 32
 
-  final class ExceptionNode(task: ForkJoinTask[_], ex: Throwable, next: ExceptionNode) extends WeakReference[ForkJoinTask[_]] {}
+  // implicit methods for ease of use of atomics
+  private implicit def cas[T](t: (Boolean, T)): Boolean = t._1
+  private implicit def load(a: CAtomicInt): Int = a.load()
+  private implicit def load(a: CAtomicLong): Long = a.load()
+
+  final class ExceptionNode(var task: ForkJoinTask[_], var ex: Throwable, var next: ExceptionNode) extends WeakReference[ForkJoinTask[_]](task) {
+
+    var thrower: Long = Thread.currentThread().getId
+
+  }
 
   final def cancelIgnoringExceptions(t: ForkJoinTask[_]): Unit = {
-    if(t != null && t.status >= 0) {
+    if(t != null && (t.status) >= 0) {
       try {
         t.cancel(false)
       } catch {
@@ -539,7 +546,7 @@ object ForkJoinTask {
         while(e != null && !break) {
           val next: ExceptionNode = e.next
           if(e == x) {
-            if(pref == null)
+            if(pred == null)
               t(i) = next
             else
               pred.next = next
@@ -576,7 +583,7 @@ object ForkJoinTask {
     }
   }
 
-  @SuppressWarnings("unchecked")
+  @SuppressWarnings(Array("unchecked"))
   def uncheckedThrow[T <: Throwable](t: Throwable): Unit = {
     if(t != null)
       throw t.asInstanceOf[T] // rely on vacuous cast
@@ -646,7 +653,7 @@ object ForkJoinTask {
 
   def getQueuedTaskCount: Int = {
     val t: Thread = Thread.currentThread()
-    var q: ForkJoinPool.WorkQueue = _
+    var q: ForkJoinPool.WorkQueue = null
     if(t.isInstanceOf[ForkJoinWorkerThread])
       q = t.asInstanceOf[ForkJoinWorkerThread].workQueue
     else q = ForkJoinPool.commonSubmitterQueue
@@ -657,7 +664,7 @@ object ForkJoinTask {
 
   protected def peekNextLocalTask: ForkJoinTask[_] = {
     val t: Thread = Thread.currentThread()
-    var q: ForkJoinPool.WorkQueue = _
+    var q: ForkJoinPool.WorkQueue = null
     if(t.isInstanceOf[ForkJoinWorkerThread])
       q = t.asInstanceOf[ForkJoinWorkerThread].workQueue
     else
@@ -667,21 +674,21 @@ object ForkJoinTask {
 
   protected def pollTask: ForkJoinTask[_] = {
     val t: Thread = Thread.currentThread()
-    var wt: ForkJoinWorkerThread = _
+    var wt: ForkJoinWorkerThread = null
     if(t.isInstanceOf[ForkJoinWorkerThread]) {
       wt = t.asInstanceOf[ForkJoinWorkerThread]
       wt.pool.nextTaskFor(wt.workQueue)
     } else null
   }
 
-  final class AdaptedRunnable[T](val runnable: Runnable, val result: T) extends ForkJoinTask[T] with RunnableFuture[T] {
+  final class AdaptedRunnable[T](val runnable: Runnable, var result: T) extends ForkJoinTask[T] with RunnableFuture[T] {
 
     if(runnable == null)
       throw new NullPointerException()
 
     override def getRawResult: T = result
 
-    override def setRawResult(value: T): Unit = result = v
+    override def setRawResult(value: T): Unit = result = value
 
     override def exec: Boolean = {
       runnable.run()
@@ -724,14 +731,14 @@ object ForkJoinTask {
 
   final class AdaptedCallable[T](val callable: Callable[_ <: T]) extends ForkJoinTask[T] with RunnableFuture[T] {
 
-    var result: T = _
+    var result: T = null.asInstanceOf[T]
 
     if(callable == null)
       throw new NullPointerException()
 
     override def getRawResult: T = result
 
-    override def setRawResult(value: T): Unit = result = v
+    override def setRawResult(value: T): Unit = result = value
 
     override def exec: Boolean = {
       try {
