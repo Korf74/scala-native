@@ -4,7 +4,7 @@ package forkjoin
 import java.io.Serializable
 import java.util
 import java.util.RandomAccess
-import java.lang.ref.WeakReference
+import java.lang.ref.{WeakReference, Reference}
 import java.lang.ref.ReferenceQueue
 import java.util.concurrent.Callable
 import java.util.concurrent.CancellationException
@@ -158,7 +158,7 @@ abstract class ForkJoinTask[V] extends Future[V] with Serializable {
           }
           if(e.get() == this && !break) // already present
             break = true
-          if(!break) e = e.next
+          if(!break) e = e.nextNode
         }
       } finally {
         lock.unlock()
@@ -188,12 +188,12 @@ abstract class ForkJoinTask[V] extends Future[V] with Serializable {
       var pred: ExceptionNode = null
       var break: Boolean = false
       while(e != null && !break) {
-        val next: ExceptionNode = e.next
+        val next: ExceptionNode = e.nextNode
         if(e.get() == this) {
           if(pred == null)
             t(i) = next
           else
-            pred.next = next
+            pred.nextNode = next
           break = true
         }
         if(!break) {
@@ -220,7 +220,7 @@ abstract class ForkJoinTask[V] extends Future[V] with Serializable {
       var t: Array[ExceptionNode] = exceptionTable
       e = t(h & (t.length - 1))
       while(e != null && e.get() != this)
-        e = e.next
+        e = e.nextNode
     } finally {
       lock.unlock()
     }
@@ -517,7 +517,7 @@ object ForkJoinTask {
   private implicit def load(a: CAtomicInt): Int = a.load()
   private implicit def load(a: CAtomicLong): Long = a.load()
 
-  final class ExceptionNode(var task: ForkJoinTask[_], var ex: Throwable, var next: ExceptionNode) extends WeakReference[ForkJoinTask[_]](task) {
+  final class ExceptionNode(var task: ForkJoinTask[_], var ex: Throwable, var nextNode: ExceptionNode) extends WeakReference[ForkJoinTask[_]](task) {
 
     var thrower: Long = Thread.currentThread().getId
 
@@ -544,12 +544,12 @@ object ForkJoinTask {
         var pred: ExceptionNode = null
         var break: Boolean = false
         while(e != null && !break) {
-          val next: ExceptionNode = e.next
+          val next: ExceptionNode = e.nextNode
           if(e == x) {
             if(pred == null)
               t(i) = next
             else
-              pred.next = next
+              pred.nextNode = next
             break = true
           }
           if(!break) {
