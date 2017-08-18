@@ -57,7 +57,7 @@ class Thread extends Runnable {
    * NOTE: This is used to keep track of the pthread linked to this Thread,
    * it might be easier/better to handle this at lower level
    */
-  private[this] var underlying: pthread_t = 0.asInstanceOf[ULong]
+  private[this] val underlying: pthread_t = 0.asInstanceOf[ULong]
 
   // Synchronization is done using internal lock
   val lock: Object = new Object()
