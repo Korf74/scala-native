@@ -184,10 +184,7 @@ class Thread extends Runnable {
   def interrupt(): Unit = {
     lock.synchronized {
       checkAccess()
-      val status: Int =
-        if (started) pthread_cancel(underlying) else 0
-      if (status != 0)
-        throw new InternalError("Pthread error " + status)
+      if (started) interruptedState = true
     }
   }
 
@@ -409,9 +406,9 @@ class Thread extends Runnable {
 
 object Thread {
 
-  import scala.collection.mutable.HashMap
+  import scala.collection.mutable
 
-  private final val THREAD_LIST = new HashMap[pthread_t, Thread]()
+  private final val THREAD_LIST = new mutable.HashMap[pthread_t, Thread]()
 
   private val lock: Object = new Object()
 
@@ -465,15 +462,7 @@ object Thread {
   def enumerate(list: Array[Thread]): Int =
     currentThread().group.enumerate(list)
 
-  def holdsLock(obj: Object): scala.Boolean = {
-    false
-    // TODO
-    /*
-    if(obj == null)
-      throw new NullPointerException()
-    VMThreadManager.holdsLock(obj)
-   */
-  }
+  def holdsLock(obj: Object): scala.Boolean = ???
 
   def `yield`(): Unit = {
     sched_yield()

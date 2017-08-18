@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-
+/*
 pthread_attr_t PTHREAD_DEFAULT_ATTR;
 struct sched_param PTHREAD_DEFAULT_SCHED_PARAM;
 int PTHREAD_DEFAULT_POLICY;
@@ -20,37 +20,37 @@ void init() {
 	pthread_attr_getstacksize(&PTHREAD_DEFAULT_ATTR, &PTHREAD_DEFAULT_STACK_SIZE);
 
 	initialized = 1;
-}
+}*/
 
 int get_max_priority() {
-
+return 1;/*
 	if(!initialized) init();
 	return sched_get_priority_max(PTHREAD_DEFAULT_POLICY);
-}
+}*/
 
-int get_min_priority() {
+int get_min_priority() {return 1;/*
 	if(!initialized) init();
-	return sched_get_priority_min(PTHREAD_DEFAULT_POLICY);
+	return sched_get_priority_min(PTHREAD_DEFAULT_POLICY);*/
 }
 
-int get_norm_priority() {
+int get_norm_priority() {return 1;/*
 	if(!initialized) init();
-	return PTHREAD_DEFAULT_SCHED_PARAM.sched_priority;
+	return PTHREAD_DEFAULT_SCHED_PARAM.sched_priority;*/
 }
 
-size_t get_stack_size() {
+size_t get_stack_size() {return 1;/*
 	if(!initialized) init();
-	return PTHREAD_DEFAULT_STACK_SIZE;
+	return PTHREAD_DEFAULT_STACK_SIZE;*/
 }
 
-void set_priority(pthread_t thread, int priority) {
+void set_priority(pthread_t thread, int priority) {/*
 	struct sched_param param;
 	int policy;
 
 	pthread_getschedparam(thread, &policy, &param);
 	param.sched_priority = priority;
 
-	pthread_setschedparam(thread, policy, &param);
+	pthread_setschedparam(thread, policy, &param);*/
 }
 
 /*

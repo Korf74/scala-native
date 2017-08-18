@@ -87,7 +87,7 @@ class CAtomicByte(default: Byte = 0.asInstanceOf[Byte]) extends CAtomic {
 
   override def toString: String = load().toString
 
-  override def equals(that: Any) = that match {
+  override def equals(that: Any): Boolean = that match {
     case o: CAtomicByte => o.load() == load()
     case o: Byte => load() == o
     case _ => false
@@ -100,10 +100,6 @@ object CAtomicByte extends CAtomic {
   def apply(initValue: Byte) = new CAtomicByte(initValue)
 
   def apply() = new CAtomicByte()
-
-  implicit def cas(v: (Boolean, Byte)): Boolean = v._1
-
-  implicit def load(a: CAtomicByte): Byte = a.load()
 
 }
 
@@ -181,7 +177,7 @@ class CAtomicShort(default: CShort = 0.asInstanceOf[CShort]) extends CAtomic {
 
   override def toString: String = load().toString
 
-  override def equals(that: Any) = that match {
+  override def equals(that: Any): Boolean = that match {
     case o: CAtomicShort => o.load() == load()
     case o: CShort => load() == o
     case _ => false
@@ -194,10 +190,6 @@ object CAtomicShort extends CAtomic {
   def apply(initValue: CShort) = new CAtomicShort(initValue)
 
   def apply() = new CAtomicShort()
-
-  implicit def cas(v: (Boolean, CShort)): Boolean = v._1
-
-  implicit def load(a: CAtomicShort): CShort = a.load()
 
 }
 
@@ -275,7 +267,7 @@ class CAtomicInt(default: CInt = 0) extends CAtomic {
 
   override def toString: String = load().toString
 
-  override def equals(that: Any) = that match {
+  override def equals(that: Any): Boolean = that match {
     case o: CAtomicInt => o.load() == load()
     case o: CInt => load() == o
     case _ => false
@@ -288,10 +280,6 @@ object CAtomicInt extends CAtomic {
   def apply(initValue: CInt) = new CAtomicInt(initValue)
 
   def apply() = new CAtomicInt()
-
-  implicit def cas(v: (Boolean, CInt)): Boolean = v._1
-
-  implicit def load(a: CAtomicInt): CInt = a.load()
 
 }
 
@@ -369,7 +357,7 @@ class CAtomicLong(default: CLong = 0.asInstanceOf[CLong]) extends CAtomic {
 
   override def toString: String = load().toString
 
-  override def equals(that: Any) = that match {
+  override def equals(that: Any): Boolean = that match {
     case o: CAtomicLong => o.load() == load()
     case o: CLong => load() == o
     case _ => false
@@ -382,10 +370,6 @@ object CAtomicLong extends CAtomic {
   def apply(initValue: CLong) = new CAtomicLong(initValue)
 
   def apply() = new CAtomicLong()
-
-  implicit def cas(v: (Boolean, CLong)): Boolean = v._1
-
-  implicit def load(a: CAtomicLong): CLong = a.load()
 
 }
 
@@ -463,7 +447,7 @@ class CAtomicUnsignedByte(default: Byte = 0.asInstanceOf[Byte]) extends CAtomic 
 
   override def toString: String = load().toString
 
-  override def equals(that: Any) = that match {
+  override def equals(that: Any): Boolean = that match {
     case o: CAtomicUnsignedByte => o.load() == load()
     case o: Byte => load() == o
     case _ => false
@@ -476,10 +460,6 @@ object CAtomicUnsignedByte extends CAtomic {
   def apply(initValue: Byte) = new CAtomicUnsignedByte(initValue)
 
   def apply() = new CAtomicUnsignedByte()
-
-  implicit def cas(v: (Boolean, Byte)): Boolean = v._1
-
-  implicit def load(a: CAtomicUnsignedByte): Byte = a.load()
 
 }
 
@@ -557,7 +537,7 @@ class CAtomicUnsignedShort(default: CUnsignedShort = 0.asInstanceOf[CUnsignedSho
 
   override def toString: String = load().toString
 
-  override def equals(that: Any) = that match {
+  override def equals(that: Any): Boolean = that match {
     case o: CAtomicUnsignedShort => o.load() == load()
     case o: CUnsignedShort => load() == o
     case _ => false
@@ -570,10 +550,6 @@ object CAtomicUnsignedShort extends CAtomic {
   def apply(initValue: CUnsignedShort) = new CAtomicUnsignedShort(initValue)
 
   def apply() = new CAtomicUnsignedShort()
-
-  implicit def cas(v: (Boolean, CUnsignedShort)): Boolean = v._1
-
-  implicit def load(a: CAtomicUnsignedShort): CUnsignedShort = a.load()
 
 }
 
@@ -651,7 +627,7 @@ class CAtomicUnsignedInt(default: CUnsignedInt = 0.asInstanceOf[CUnsignedInt]) e
 
   override def toString: String = load().toString
 
-  override def equals(that: Any) = that match {
+  override def equals(that: Any): Boolean = that match {
     case o: CAtomicUnsignedInt => o.load() == load()
     case o: CUnsignedInt => load() == o
     case _ => false
@@ -664,10 +640,6 @@ object CAtomicUnsignedInt extends CAtomic {
   def apply(initValue: CUnsignedInt) = new CAtomicUnsignedInt(initValue)
 
   def apply() = new CAtomicUnsignedInt()
-
-  implicit def cas(v: (Boolean, CUnsignedInt)): Boolean = v._1
-
-  implicit def load(a: CAtomicUnsignedInt): CUnsignedInt = a.load()
 
 }
 
@@ -745,7 +717,7 @@ class CAtomicUnsignedLong(default: CUnsignedLong = 0.asInstanceOf[CUnsignedLong]
 
   override def toString: String = load().toString
 
-  override def equals(that: Any) = that match {
+  override def equals(that: Any): Boolean = that match {
     case o: CAtomicUnsignedLong => o.load() == load()
     case o: CUnsignedLong => load() == o
     case _ => false
@@ -758,10 +730,6 @@ object CAtomicUnsignedLong extends CAtomic {
   def apply(initValue: CUnsignedLong) = new CAtomicUnsignedLong(initValue)
 
   def apply() = new CAtomicUnsignedLong()
-
-  implicit def cas(v: (Boolean, CUnsignedLong)): Boolean = v._1
-
-  implicit def load(a: CAtomicUnsignedLong): CUnsignedLong = a.load()
 
 }
 
@@ -839,7 +807,7 @@ class CAtomicChar(default: CChar = 'a'.asInstanceOf[CChar]) extends CAtomic {
 
   override def toString: String = load().toString
 
-  override def equals(that: Any) = that match {
+  override def equals(that: Any): Boolean = that match {
     case o: CAtomicChar => o.load() == load()
     case o: CChar => load() == o
     case _ => false
@@ -852,10 +820,6 @@ object CAtomicChar extends CAtomic {
   def apply(initValue: CChar) = new CAtomicChar(initValue)
 
   def apply() = new CAtomicChar()
-
-  implicit def cas(v: (Boolean, CChar)): Boolean = v._1
-
-  implicit def load(a: CAtomicChar): CChar = a.load()
 
 }
 
@@ -933,7 +897,7 @@ class CAtomicUnsignedChar(default: CUnsignedChar = 'a'.asInstanceOf[CUnsignedCha
 
   override def toString: String = load().toString
 
-  override def equals(that: Any) = that match {
+  override def equals(that: Any): Boolean = that match {
     case o: CAtomicUnsignedChar => o.load() == load()
     case o: CUnsignedChar => load() == o
     case _ => false
@@ -946,10 +910,6 @@ object CAtomicUnsignedChar extends CAtomic {
   def apply(initValue: CUnsignedChar) = new CAtomicUnsignedChar(initValue)
 
   def apply() = new CAtomicUnsignedChar()
-
-  implicit def cas(v: (Boolean, CUnsignedChar)): Boolean = v._1
-
-  implicit def load(a: CAtomicUnsignedChar): CUnsignedChar = a.load()
 
 }
 
@@ -1027,7 +987,7 @@ class CAtomicCSize(default: CSize = 0.asInstanceOf[CSize]) extends CAtomic {
 
   override def toString: String = load().toString
 
-  override def equals(that: Any) = that match {
+  override def equals(that: Any): Boolean = that match {
     case o: CAtomicCSize => o.load() == load()
     case o: CSize => load() == o
     case _ => false
@@ -1041,15 +1001,11 @@ object CAtomicCSize extends CAtomic {
 
   def apply() = new CAtomicCSize()
 
-  implicit def cas(v: (Boolean, CSize)): Boolean = v._1
-
-  implicit def load(a: CAtomicCSize): CSize = a.load()
-
 }
 
-// ###sourceLocation(file: "/home/remi/perso/Projects/scala-native/nativelib/src/main/scala/scala/scalanative/runtime/CAtomics.scala.gyb", line: 126)
+// ###sourceLocation(file: "/home/remi/perso/Projects/scala-native/nativelib/src/main/scala/scala/scalanative/runtime/CAtomics.scala.gyb", line: 122)
 
-class CAtomicRef[T <: AnyRef](default: T = 0L.asInstanceOf[T]) extends CAtomicLong(default.asInstanceOf[CLong]) {}
+class CAtomicRef[T <: AnyRef](default: T = 0L.asInstanceOf[T]) extends CAtomicLong(default.asInstanceOf[Long]) {}
 
 object CAtomicRef extends CAtomic {
 
@@ -1057,40 +1013,38 @@ object CAtomicRef extends CAtomic {
 
   def apply[T <: AnyRef]() = new CAtomicRef[T]()
 
-  //implicit def underlying[T <: AnyRef](a: CAtomicRef[T]): T = a.load().asInstanceOf[T]
-  //implicit def cas[T <: AnyRef](v: (Boolean, T)): Boolean = v._1
-
 }
 
+// Helper object, can be imported for ease of use
 object CAtomicsImplicits {
 
   implicit def toLong[T <: AnyRef](r: T): CLong = r.asInstanceOf[CLong]
   implicit def toRef[T <: AnyRef](l: CLong): T = l.asInstanceOf[T]
   implicit def underlying[T <: AnyRef](a: CAtomicRef[T]): T = a.load().asInstanceOf[T]
   implicit def cas[T](v: (Boolean, T)): Boolean = v._1
-// ###sourceLocation(file: "/home/remi/perso/Projects/scala-native/nativelib/src/main/scala/scala/scalanative/runtime/CAtomics.scala.gyb", line: 147)
+// ###sourceLocation(file: "/home/remi/perso/Projects/scala-native/nativelib/src/main/scala/scala/scalanative/runtime/CAtomics.scala.gyb", line: 141)
   implicit def underlying(a: CAtomicByte): Byte = a.load()
-// ###sourceLocation(file: "/home/remi/perso/Projects/scala-native/nativelib/src/main/scala/scala/scalanative/runtime/CAtomics.scala.gyb", line: 147)
+// ###sourceLocation(file: "/home/remi/perso/Projects/scala-native/nativelib/src/main/scala/scala/scalanative/runtime/CAtomics.scala.gyb", line: 141)
   implicit def underlying(a: CAtomicShort): CShort = a.load()
-// ###sourceLocation(file: "/home/remi/perso/Projects/scala-native/nativelib/src/main/scala/scala/scalanative/runtime/CAtomics.scala.gyb", line: 147)
+// ###sourceLocation(file: "/home/remi/perso/Projects/scala-native/nativelib/src/main/scala/scala/scalanative/runtime/CAtomics.scala.gyb", line: 141)
   implicit def underlying(a: CAtomicInt): CInt = a.load()
-// ###sourceLocation(file: "/home/remi/perso/Projects/scala-native/nativelib/src/main/scala/scala/scalanative/runtime/CAtomics.scala.gyb", line: 147)
+// ###sourceLocation(file: "/home/remi/perso/Projects/scala-native/nativelib/src/main/scala/scala/scalanative/runtime/CAtomics.scala.gyb", line: 141)
   implicit def underlying(a: CAtomicLong): CLong = a.load()
-// ###sourceLocation(file: "/home/remi/perso/Projects/scala-native/nativelib/src/main/scala/scala/scalanative/runtime/CAtomics.scala.gyb", line: 147)
+// ###sourceLocation(file: "/home/remi/perso/Projects/scala-native/nativelib/src/main/scala/scala/scalanative/runtime/CAtomics.scala.gyb", line: 141)
   implicit def underlying(a: CAtomicUnsignedByte): Byte = a.load()
-// ###sourceLocation(file: "/home/remi/perso/Projects/scala-native/nativelib/src/main/scala/scala/scalanative/runtime/CAtomics.scala.gyb", line: 147)
+// ###sourceLocation(file: "/home/remi/perso/Projects/scala-native/nativelib/src/main/scala/scala/scalanative/runtime/CAtomics.scala.gyb", line: 141)
   implicit def underlying(a: CAtomicUnsignedShort): CUnsignedShort = a.load()
-// ###sourceLocation(file: "/home/remi/perso/Projects/scala-native/nativelib/src/main/scala/scala/scalanative/runtime/CAtomics.scala.gyb", line: 147)
+// ###sourceLocation(file: "/home/remi/perso/Projects/scala-native/nativelib/src/main/scala/scala/scalanative/runtime/CAtomics.scala.gyb", line: 141)
   implicit def underlying(a: CAtomicUnsignedInt): CUnsignedInt = a.load()
-// ###sourceLocation(file: "/home/remi/perso/Projects/scala-native/nativelib/src/main/scala/scala/scalanative/runtime/CAtomics.scala.gyb", line: 147)
+// ###sourceLocation(file: "/home/remi/perso/Projects/scala-native/nativelib/src/main/scala/scala/scalanative/runtime/CAtomics.scala.gyb", line: 141)
   implicit def underlying(a: CAtomicUnsignedLong): CUnsignedLong = a.load()
-// ###sourceLocation(file: "/home/remi/perso/Projects/scala-native/nativelib/src/main/scala/scala/scalanative/runtime/CAtomics.scala.gyb", line: 147)
+// ###sourceLocation(file: "/home/remi/perso/Projects/scala-native/nativelib/src/main/scala/scala/scalanative/runtime/CAtomics.scala.gyb", line: 141)
   implicit def underlying(a: CAtomicChar): CChar = a.load()
-// ###sourceLocation(file: "/home/remi/perso/Projects/scala-native/nativelib/src/main/scala/scala/scalanative/runtime/CAtomics.scala.gyb", line: 147)
+// ###sourceLocation(file: "/home/remi/perso/Projects/scala-native/nativelib/src/main/scala/scala/scalanative/runtime/CAtomics.scala.gyb", line: 141)
   implicit def underlying(a: CAtomicUnsignedChar): CUnsignedChar = a.load()
-// ###sourceLocation(file: "/home/remi/perso/Projects/scala-native/nativelib/src/main/scala/scala/scalanative/runtime/CAtomics.scala.gyb", line: 147)
+// ###sourceLocation(file: "/home/remi/perso/Projects/scala-native/nativelib/src/main/scala/scala/scalanative/runtime/CAtomics.scala.gyb", line: 141)
   implicit def underlying(a: CAtomicCSize): CSize = a.load()
-// ###sourceLocation(file: "/home/remi/perso/Projects/scala-native/nativelib/src/main/scala/scala/scalanative/runtime/CAtomics.scala.gyb", line: 149)
+// ###sourceLocation(file: "/home/remi/perso/Projects/scala-native/nativelib/src/main/scala/scala/scalanative/runtime/CAtomics.scala.gyb", line: 143)
 
 }
 

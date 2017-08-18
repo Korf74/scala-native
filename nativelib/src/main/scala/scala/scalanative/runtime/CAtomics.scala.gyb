@@ -102,7 +102,7 @@ class CAtomic${C}(default: ${T} = ${default}) extends CAtomic {
 
   override def toString: String = load().toString
 
-  override def equals(that: Any) = that match {
+  override def equals(that: Any): Boolean = that match {
     case o: CAtomic${C} => o.load() == load()
     case o: ${T} => load() == o
     case _ => false
@@ -116,15 +116,11 @@ object CAtomic${C} extends CAtomic {
 
   def apply() = new CAtomic${C}()
 
-  implicit def cas(v: (Boolean, ${T})): Boolean = v._1
-
-  implicit def load(a: CAtomic${C}): ${T} = a.load()
-
 }
 
 % end
 
-class CAtomicRef[T <: AnyRef](default: T = 0L.asInstanceOf[T]) extends CAtomicLong(default.asInstanceOf[CLong]) {}
+class CAtomicRef[T <: AnyRef](default: T = 0L.asInstanceOf[T]) extends CAtomicLong(default.asInstanceOf[Long]) {}
 
 object CAtomicRef extends CAtomic {
 
@@ -132,11 +128,9 @@ object CAtomicRef extends CAtomic {
 
   def apply[T <: AnyRef]() = new CAtomicRef[T]()
 
-  //implicit def underlying[T <: AnyRef](a: CAtomicRef[T]): T = a.load().asInstanceOf[T]
-  //implicit def cas[T <: AnyRef](v: (Boolean, T)): Boolean = v._1
-
 }
 
+// Helper object, can be imported for ease of use
 object CAtomicsImplicits {
 
   implicit def toLong[T <: AnyRef](r: T): CLong = r.asInstanceOf[CLong]
