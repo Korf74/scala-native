@@ -48,6 +48,10 @@ extern "C" {
     ${T} load_${N}(atomic<${T}>* atm) {
         return atm -> load();
     }
+
+    void store_${N}(atomic<${T}>* atm, ${T} val) {
+      atm -> store(val);
+    }
 % end
 
 	/**
@@ -69,10 +73,12 @@ extern "C" {
      * */
 
 % for (T, N) in zip(types, names):
+% if N != 'gen':
      // ${N}
      ${T} atomic_${op}_${N}(atomic<${T}>* atm, ${T} val) {
         return atm -> fetch_${op}(val);
      }
+% end
 % end
 % end
 }

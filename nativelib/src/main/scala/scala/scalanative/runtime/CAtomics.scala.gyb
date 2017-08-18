@@ -4,7 +4,11 @@ package runtime
 import scala.scalanative.native._
 import scala.scalanative.runtime.Atomic._
 
-abstract class CAtomic
+abstract class CAtomic {
+
+  import CAtomicsImplicits._
+
+}
 
 %{
    classes = ['Byte', 'Short', 'Int', 'Long',
@@ -35,7 +39,7 @@ class CAtomic${C}(default: ${T} = ${default}) extends CAtomic {
 
   def load(): ${T} = load_${N}(atm)
 
-  def store(value: ${T}): Unit = init_${N}(atm, value)
+  def store(value: ${T}): Unit = store_${N}(atm, value)
 
   def free(): Unit = Atomic.free(atm${castB})
 
@@ -98,6 +102,12 @@ class CAtomic${C}(default: ${T} = ${default}) extends CAtomic {
 
   override def toString: String = load().toString
 
+  override def equals(that: Any) = that match {
+    case o: CAtomic${C} => o.load() == load()
+    case o: ${T} => load() == o
+    case _ => false
+  }
+
 }
 
 object CAtomic${C} extends CAtomic {
@@ -106,7 +116,36 @@ object CAtomic${C} extends CAtomic {
 
   def apply() = new CAtomic${C}()
 
+  implicit def cas(v: (Boolean, ${T})): Boolean = v._1
+
+  implicit def load(a: CAtomic${C}): ${T} = a.load()
+
 }
 
 % end
+
+class CAtomicRef[T <: AnyRef](default: T = 0L.asInstanceOf[T]) extends CAtomicLong(default.asInstanceOf[CLong]) {}
+
+object CAtomicRef extends CAtomic {
+
+  def apply[T <: AnyRef](initValue: T) = new CAtomicRef[T](initValue)
+
+  def apply[T <: AnyRef]() = new CAtomicRef[T]()
+
+  //implicit def underlying[T <: AnyRef](a: CAtomicRef[T]): T = a.load().asInstanceOf[T]
+  //implicit def cas[T <: AnyRef](v: (Boolean, T)): Boolean = v._1
+
+}
+
+object CAtomicsImplicits {
+
+  implicit def toLong[T <: AnyRef](r: T): CLong = r.asInstanceOf[CLong]
+  implicit def toRef[T <: AnyRef](l: CLong): T = l.asInstanceOf[T]
+  implicit def underlying[T <: AnyRef](a: CAtomicRef[T]): T = a.load().asInstanceOf[T]
+  implicit def cas[T](v: (Boolean, T)): Boolean = v._1
+  %for (C, T) in zip(classes, types):
+  implicit def underlying(a: CAtomic${C}): ${T} = a.load()
+  %end
+
+}
 

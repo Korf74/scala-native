@@ -48,6 +48,8 @@ object Atomic {
   // Load
   % for (C, T, N) in zip(classes, types, names):
   def load_${N}(ptr: ${C}): ${T} = extern
+
+  def store_${N}(ptr: ${C}, v: ${T}): Unit = extern
   % end
 
   // Compare and Swap
@@ -63,9 +65,11 @@ object Atomic {
 
   // Add and Sub
   % for (C, T, N) in zip(classes, types, names):
+  % if N != 'gen':
   % for op in ['add', 'sub', 'or', 'and', 'xor']:
   // ${op}
   def atomic_${op}_${N}(ptr: ${C}, value: ${T}): ${T} = extern
+  % end
   % end
   % end
 
