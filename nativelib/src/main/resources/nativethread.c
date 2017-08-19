@@ -6,7 +6,6 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-
 pthread_attr_t PTHREAD_DEFAULT_ATTR;
 struct sched_param PTHREAD_DEFAULT_SCHED_PARAM;
 int PTHREAD_DEFAULT_POLICY;

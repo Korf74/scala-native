@@ -1,8 +1,7 @@
 package java.lang
 
 import java.lang.ref.{Reference, WeakReference}
-
-import scala.scalanative.runtime.CAtomicInt
+import java.util.concurrent.atomic.AtomicInteger
 
 // Ported from Harmony
 
@@ -13,7 +12,7 @@ class ThreadLocal[T] {
   private final val reference: Reference[ThreadLocal[T]] =
     new WeakReference[ThreadLocal[T]](this)
 
-  private final val hash: Int = hashCounter.fetchAdd(0x61c88647 << 1)
+  private final val hash: Int = hashCounter.getAndAdd(0x61c88647 << 1)
 
   protected def initialValue(): T = null.asInstanceOf[T]
 
@@ -47,7 +46,7 @@ class ThreadLocal[T] {
 
   def remove(): Unit = {
     val currentThread: Thread = Thread.currentThread()
-    var vals: Values          = values(currentThread)
+    val vals: Values          = values(currentThread)
     if (vals != null) {
       vals.remove(this)
     }
@@ -63,25 +62,25 @@ class ThreadLocal[T] {
 
 object ThreadLocal {
 
-  private val hashCounter: CAtomicInt = CAtomicInt()
+  private val hashCounter: AtomicInteger = new AtomicInteger(0)
 
   class Values {
 
     import Values._
 
-    initializeTable(INITIAL_SIZE)
+    private var table: Array[Object] = null
 
-    private var table: Array[Object] = _
-
-    private var mask: Int = _
+    private var mask: Int = 0
 
     private var size: Int = 0
 
     private var tombstones: Int = 0
 
-    private var maximumLoad: Int = _
+    private var maximumLoad: Int = 0
 
-    private var clean: Int = _
+    private var clean: Int = 0
+
+    initializeTable(INITIAL_SIZE)
 
     def this(fromParent: Values) {
       this()
@@ -104,6 +103,7 @@ object ThreadLocal {
       var i: Int                  = this.table.length
       var continue: scala.Boolean = false
       while (i >= 0) {
+        continue = false
         val k: Object = table(i)
 
         if (k == null || k == TOMBSTONE) {
@@ -111,16 +111,16 @@ object ThreadLocal {
         }
 
         if (!continue) {
-          val reference: Reference[InheritableThreadLocal[_ <: Object]] =
-            k.asInstanceOf[Reference[InheritableThreadLocal[_ <: Object]]]
+          val reference: Reference[InheritableThreadLocal[Object]] =
+            k.asInstanceOf[Reference[InheritableThreadLocal[Object]]]
 
-          val key = reference.get()
+          val key: InheritableThreadLocal[Object] = reference.get()
           if (key != null) {
             // Replace value with filtered value
             // We should just let exceptions bubble out and tank
             // the thread creation
 
-            table(i + 1) = fromParent.table(i + 1) //key.childValue(fromParent.table(i + 1))
+            table(i + 1) = key.childValue(fromParent.table(i + 1))
           } else {
             table(i) = TOMBSTONE
             table(i + 1) = null
@@ -132,10 +132,9 @@ object ThreadLocal {
 
             size -= 1
             fromParent.size -= 1
-
-            i -= 2
           }
         }
+        i -= 2
       }
     }
 
@@ -168,20 +167,20 @@ object ThreadLocal {
           if (reference.get() == null) {
             table(index) = TOMBSTONE
             table(index + 1) = null
-            tombstones -= 1
+            tombstones += 1
             size -= 1
           }
-
-          counter >>= 1
-          index = next(index)
         }
+
+        counter >>= 1
+        index = next(index)
       }
 
       clean = index
     }
 
     private def rehash(): scala.Boolean = {
-      if (tombstones + size < maximumLoad) false
+      if (tombstones + size < maximumLoad) return false
 
       val capacity: Int = table.length >> 1
 
@@ -212,9 +211,8 @@ object ThreadLocal {
           val key: ThreadLocal[_] = reference.get()
           if (key != null) add(key, oldTable(i + 1))
           else size -= 1
-
-          i -= 2
         }
+        i -= 2
       }
 
       true
@@ -278,7 +276,7 @@ object ThreadLocal {
         val value: Object = key.initialValue().asInstanceOf[Object]
 
         // If the table is still the same and the slot is still empty...
-        if ((this.table sameElements table) && table(index) == null) {
+        if ((this.table == table) && table(index) == null) {
           table(index) = key.reference
           table(index + 1) = value
           size += 1
@@ -306,7 +304,7 @@ object ThreadLocal {
           val value: Object = key.initialValue().asInstanceOf[Object]
 
           // If the table is still the same
-          if (this.table sameElements table) {
+          if (this.table == table) {
             // If we passed a tombstone and that slot still
             // contains a tombstone
             if (firstTombstone > -1 && table(firstTombstone) == TOMBSTONE) {
